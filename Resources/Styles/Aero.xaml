@@ -1,0 +1,88 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:r="clr-namespace:System.Windows.Controls.Ribbon;assembly=System.Windows.Controls.Ribbon">
+
+    <!-- Aero Brushes -->
+    <LinearGradientBrush x:Key="AeroBlueGradientBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#EAF2FA" Offset="0"/>
+        <GradientStop Color="#E9F1F9" Offset="0.3"/>
+        <GradientStop Color="#D2E4F5" Offset="0.7"/>
+        <GradientStop Color="#C7DDF0" Offset="1"/>
+    </LinearGradientBrush>
+
+    <SolidColorBrush x:Key="AeroBorderBrush" Color="#A5C9E6"/>
+    <SolidColorBrush x:Key="AeroDisabledBorderBrush" Color="#C5C5C5"/>
+    <SolidColorBrush x:Key="AeroDisabledBackgroundBrush" Color="#F0F0F0"/>
+    <SolidColorBrush x:Key="AeroTextBrush" Color="#1E395B"/>
+    <SolidColorBrush x:Key="AeroDisabledTextBrush" Color="#888888"/>
+
+    <!-- Button Brushes -->
+    <LinearGradientBrush x:Key="AeroButtonNormalBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#F0F9FF" Offset="0"/>
+        <GradientStop Color="#D7E8F9" Offset="0.5"/>
+        <GradientStop Color="#BDE0F8" Offset="0.5"/>
+        <GradientStop Color="#B6D8F4" Offset="1"/>
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="AeroButtonHoverBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFCEE" Offset="0"/>
+        <GradientStop Color="#FFE294" Offset="0.5"/>
+        <GradientStop Color="#FFD97D" Offset="0.5"/>
+        <GradientStop Color="#FFD46A" Offset="1"/>
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="AeroButtonPressedBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#F2E4A7" Offset="0"/>
+        <GradientStop Color="#F0D773" Offset="0.5"/>
+        <GradientStop Color="#EBCF61" Offset="0.5"/>
+        <GradientStop Color="#E9C95C" Offset="1"/>
+    </LinearGradientBrush>
+
+    <SolidColorBrush x:Key="AeroButtonNormalBorderBrush" Color="#83B3D3"/>
+    <SolidColorBrush x:Key="AeroButtonHoverBorderBrush" Color="#E5C365"/>
+    <SolidColorBrush x:Key="AeroButtonPressedBorderBrush" Color="#9B813C"/>
+
+    <LinearGradientBrush x:Key="AeroButtonHighlightBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0.0" />
+        <GradientStop Color="Transparent" Offset="1.0" />
+    </LinearGradientBrush>
+
+    <!-- Ribbon Style -->
+    <Style TargetType="{x:Type r:Ribbon}">
+        <Setter Property="Background" Value="{StaticResource AeroBlueGradientBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource AeroBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="0,0,0,1"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+    </Style>
+
+    <!-- Removed custom RibbonTab ControlTemplate to preserve default behavior and visibility -->
+    
+    <!-- Use default RibbonGroup and RibbonButton templates to ensure proper item layout -->
+
+    <!-- GroupBox Style -->
+    <Style TargetType="{x:Type GroupBox}">
+        <Setter Property="BorderBrush" Value="{StaticResource AeroBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type GroupBox}">
+                    <Grid SnapsToDevicePixels="true">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <!-- Header -->
+                        <Border Grid.Row="0" Background="{StaticResource AeroBlueGradientBrush}" BorderBrush="{StaticResource AeroBorderBrush}" BorderThickness="1" CornerRadius="2,2,0,0" >
+                            <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" Margin="5,2,5,2"/>
+                        </Border>
+                        <!-- Content -->
+                        <Border Grid.Row="1" BorderBrush="{StaticResource AeroBorderBrush}" BorderThickness="1,0,1,1" CornerRadius="0,0,2,2" Padding="5">
+                            <ContentPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>
