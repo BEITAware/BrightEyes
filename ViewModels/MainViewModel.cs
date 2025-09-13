@@ -32,6 +32,9 @@ namespace BrightEyes.ViewModels
                 {
                     _renderer = new RendererD3D11(handle, width, height);
                     _renderer.Initialize();
+                    // Set brighter, lower-saturation blue to fit theme and reduce glare
+                    _renderer.SetSdrBackgroundColor(249f/255f, 250f/255f, 254f/255f, 1.0f); // #F9FAFE
+                    _renderer.SetHdrBackgroundColor(0.58f, 0.59f, 0.62f, 1.0f);
                     _renderer.Start();
                 }
                 else
@@ -42,7 +45,7 @@ namespace BrightEyes.ViewModels
 
             ResizeRendererAction = (width, height) =>
             {
-                Debug.WriteLine($"ResizeRendererAction invoked with width: {width}, height: {height}");
+                //Debug.WriteLine($"ResizeRendererAction invoked with width: {width}, height: {height}");
                 _renderer?.Resize(width, height);
             };
             Debug.WriteLine("MainViewModel constructor finished.");

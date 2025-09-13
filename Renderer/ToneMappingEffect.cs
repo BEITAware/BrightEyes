@@ -11,7 +11,17 @@ namespace BrightEyes.Renderer
     {
         private ID3D11VertexShader? _vertexShader;
         private ID3D11PixelShader? _pixelShader;
-        private ID3D11SamplerState? _linearClampSampler;
+        private ID3D11SamplerState? _pointClampSampler;
+        private ID3D11Buffer? _scaleConstantBuffer;
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct ScaleConstants
+        {
+            public float SourceWidth;
+            public float SourceHeight;
+            public float SourceTexelWidth;
+            public float SourceTexelHeight;
+        }
 
         public ToneMappingEffect(ID3D11Device device)
         {
@@ -26,26 +36,57 @@ namespace BrightEyes.Renderer
             var pixelShaderByteCode = Compiler.CompileFromFile(psPath, "main", "ps_5_0");
             _pixelShader = device.CreatePixelShader(pixelShaderByteCode.Span);
 
-            var samplerDesc = new SamplerDescription
+            var pointSamplerDesc = new SamplerDescription
             {
-                Filter = Vortice.Direct3D11.Filter.MinMagMipLinear,
+                Filter = Vortice.Direct3D11.Filter.Anisotropic,
                 AddressU = Vortice.Direct3D11.TextureAddressMode.Clamp,
                 AddressV = Vortice.Direct3D11.TextureAddressMode.Clamp,
-                AddressW = Vortice.Direct3D11.TextureAddressMode.Clamp
+                AddressW = Vortice.Direct3D11.TextureAddressMode.Clamp,
+                MaxAnisotropy = 8
             };
-            _linearClampSampler = device.CreateSamplerState(samplerDesc);
+            _pointClampSampler = device.CreateSamplerState(pointSamplerDesc);
+
+            _scaleConstantBuffer = device.CreateBuffer(new Vortice.Direct3D11.BufferDescription
+            {
+                ByteWidth = System.Runtime.InteropServices.Marshal.SizeOf<System.Numerics.Vector4>() * 1, // 16 bytes minimum; we use 2 float2
+                Usage = Vortice.Direct3D11.ResourceUsage.Dynamic,
+                BindFlags = Vortice.Direct3D11.BindFlags.ConstantBuffer,
+                CPUAccessFlags = Vortice.Direct3D11.CpuAccessFlags.Write,
+                MiscFlags = Vortice.Direct3D11.ResourceOptionFlags.None,
+                StructureByteStride = 0
+            });
         }
 
-        public void Apply(ID3D11DeviceContext context, ID3D11ShaderResourceView source, ID3D11RenderTargetView destination)
+        public void Apply(ID3D11DeviceContext context, ID3D11ShaderResourceView source, ID3D11RenderTargetView destination, int sourceWidth, int sourceHeight)
         {
             // 在这里实现渲染逻辑
             context.OMSetRenderTargets(destination);
             context.VSSetShader(_vertexShader);
             context.PSSetShader(_pixelShader);
             context.PSSetShaderResources(0, new[] { source });
-            if (_linearClampSampler != null)
+            if (_scaleConstantBuffer != null)
             {
-                context.PSSetSamplers(0, new[] { _linearClampSampler });
+                var mapped = context.Map(_scaleConstantBuffer, 0, Vortice.Direct3D11.MapMode.WriteDiscard, Vortice.Direct3D11.MapFlags.None);
+                try
+                {
+                    var constants = new ScaleConstants
+                    {
+                        SourceWidth = sourceWidth,
+                        SourceHeight = sourceHeight,
+                        SourceTexelWidth = sourceWidth > 0 ? 1.0f / sourceWidth : 0.0f,
+                        SourceTexelHeight = sourceHeight > 0 ? 1.0f / sourceHeight : 0.0f
+                    };
+                    System.Runtime.InteropServices.Marshal.StructureToPtr(constants, mapped.DataPointer, false);
+                }
+                finally
+                {
+                    context.Unmap(_scaleConstantBuffer, 0);
+                }
+                context.PSSetConstantBuffers(0, new[] { _scaleConstantBuffer });
+            }
+            if (_pointClampSampler != null)
+            {
+                context.PSSetSamplers(0, new[] { _pointClampSampler });
             }
             context.IASetPrimitiveTopology(Vortice.Direct3D.PrimitiveTopology.TriangleList);
             context.Draw(3, 0);
@@ -55,7 +96,8 @@ namespace BrightEyes.Renderer
         {
             _vertexShader?.Dispose();
             _pixelShader?.Dispose();
-            _linearClampSampler?.Dispose();
+            _pointClampSampler?.Dispose();
+            _scaleConstantBuffer?.Dispose();
         }
     }
 }

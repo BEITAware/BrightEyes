@@ -33,6 +33,15 @@ namespace BrightEyes.Renderer
         private ToneMappingEffect? _toneMappingEffect;
 
         private ID3D11SamplerState? _linearClampSampler;
+        private ID3D11SamplerState? _pointClampSampler;
+        private ID3D11Buffer? _scaleConstantBuffer;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ScaleConstants
+        {
+            public Vector2 SourceSize;
+            public Vector2 SourceTexelSize;
+        }
 
         // External texture support
         private ID3D11Texture2D? _externalTexture;
@@ -47,6 +56,13 @@ namespace BrightEyes.Renderer
         // Tracks current content size for aspect-correct viewport
         private int _sourceWidth;
         private int _sourceHeight;
+
+        // Background colors for SDR and HDR outputs
+        // SDR default: very light low-saturation blue near SDR paper white (#F8FAFE)
+        private Color4 _sdrBackgroundColor = new Color4(0.9725f, 0.9804f, 0.9961f, 1.0f);
+        // HDR default: slightly brighter, low-saturation blue (kept below peak white)
+        private Color4 _hdrBackgroundColor = new Color4(0.58f, 0.59f, 0.62f, 1.0f);
+        private bool _isHdrOutput = false;
 
         public RendererD3D11(IntPtr windowHandle, int width, int height)
         {
@@ -145,6 +161,9 @@ namespace BrightEyes.Renderer
                     Debug.WriteLine("SDR display detected or HDR support check failed. Using default SDR color space.");
                 }
 
+                // Track whether swapchain is presenting in HDR colorspace
+                _isHdrOutput = hdrSupported;
+
                 CreateResources();
 
                 // Compile and create shaders
@@ -164,7 +183,7 @@ namespace BrightEyes.Renderer
 
                _toneMappingEffect = new ToneMappingEffect(_device);
 
-               // Create a default linear clamp sampler for sampling source textures
+               // Create a default linear clamp sampler for tone-mapped sampling
                var samplerDesc = new SamplerDescription
                {
                    Filter = Filter.MinMagMipLinear,
@@ -173,6 +192,29 @@ namespace BrightEyes.Renderer
                    AddressW = TextureAddressMode.Clamp
                };
                _linearClampSampler = _device.CreateSamplerState(samplerDesc);
+
+               // Linear/anisotropic sampler for bicubic 4-fetch method
+               var pointSamplerDesc = new SamplerDescription
+               {
+                   Filter = Filter.Anisotropic,
+                   AddressU = TextureAddressMode.Clamp,
+                   AddressV = TextureAddressMode.Clamp,
+                   AddressW = TextureAddressMode.Clamp,
+                   MaxAnisotropy = 8,
+               };
+               _pointClampSampler = _device.CreateSamplerState(pointSamplerDesc);
+
+               // Constant buffer for scaling parameters
+               var cbDesc = new BufferDescription
+               {
+                   ByteWidth = Marshal.SizeOf<ScaleConstants>(),
+                   Usage = ResourceUsage.Dynamic,
+                   BindFlags = BindFlags.ConstantBuffer,
+                   CPUAccessFlags = CpuAccessFlags.Write,
+                   MiscFlags = ResourceOptionFlags.None,
+                   StructureByteStride = 0
+               };
+               _scaleConstantBuffer = _device.CreateBuffer(cbDesc);
            }
             catch (Exception ex)
             {
@@ -209,6 +251,30 @@ namespace BrightEyes.Renderer
             UpdateViewport();
         }
 
+        private void UpdateScaleConstants(int sourceWidth, int sourceHeight)
+        {
+            if (_deviceContext == null || _scaleConstantBuffer == null)
+            {
+                return;
+            }
+
+            var constants = new ScaleConstants
+            {
+                SourceSize = new Vector2(sourceWidth, sourceHeight),
+                SourceTexelSize = new Vector2(sourceWidth > 0 ? 1.0f / sourceWidth : 0.0f, sourceHeight > 0 ? 1.0f / sourceHeight : 0.0f)
+            };
+
+            var mapped = _deviceContext.Map(_scaleConstantBuffer, 0, MapMode.WriteDiscard, Vortice.Direct3D11.MapFlags.None);
+            try
+            {
+                Marshal.StructureToPtr(constants, mapped.DataPointer, false);
+            }
+            finally
+            {
+                _deviceContext.Unmap(_scaleConstantBuffer, 0);
+            }
+        }
+
         public void Start()
         {
             _renderThread = new Thread(RunRenderLoop) { IsBackground = true, Name = "D3DRenderLoop" };
@@ -221,9 +287,9 @@ namespace BrightEyes.Renderer
             {
                 lock (_lockObject)
                 {
-                    // Clear backbuffer so letterbox/pillarbox areas are black
+                    // Clear backbuffer so letterbox/pillarbox areas use theme background
                     _deviceContext.OMSetRenderTargets(_renderTargetView);
-                    _deviceContext.ClearRenderTargetView(_renderTargetView, new Color4(0.0f, 0.0f, 0.0f, 1.0f));
+                    _deviceContext.ClearRenderTargetView(_renderTargetView, _isHdrOutput ? _hdrBackgroundColor : _sdrBackgroundColor);
                     if (_externalTextureShaderResourceView != null)
                     {
                         // External texture path
@@ -234,9 +300,14 @@ namespace BrightEyes.Renderer
                             _deviceContext.VSSetShader(_vertexShader);
                             _deviceContext.PSSetShader(_presentPixelShader);
                             _deviceContext.PSSetShaderResources(0, new[] { _externalTextureShaderResourceView });
-                            if (_linearClampSampler != null)
+                            UpdateScaleConstants(_sourceWidth, _sourceHeight);
+                            if (_scaleConstantBuffer != null)
                             {
-                                _deviceContext.PSSetSamplers(0, new[] { _linearClampSampler });
+                                _deviceContext.PSSetConstantBuffers(0, new[] { _scaleConstantBuffer });
+                            }
+                            if (_pointClampSampler != null)
+                            {
+                                _deviceContext.PSSetSamplers(0, new[] { _pointClampSampler });
                             }
                             _deviceContext.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
                             _deviceContext.Draw(3, 0);
@@ -244,7 +315,7 @@ namespace BrightEyes.Renderer
                         else
                         {
                             // Fall back to tone mapping pipeline if the source is not PQ Rec.2020
-                            _toneMappingEffect?.Apply(_deviceContext, _externalTextureShaderResourceView, _renderTargetView);
+                            _toneMappingEffect?.Apply(_deviceContext, _externalTextureShaderResourceView, _renderTargetView, _sourceWidth, _sourceHeight);
                         }
                     }
                     else
@@ -257,7 +328,7 @@ namespace BrightEyes.Renderer
                         _deviceContext.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
                         _deviceContext.Draw(3, 0);
 
-                        _toneMappingEffect?.Apply(_deviceContext, _hdrShaderResourceView, _renderTargetView);
+                        _toneMappingEffect?.Apply(_deviceContext, _hdrShaderResourceView, _renderTargetView, _width, _height);
                     }
 
                     // Step F: Present the final result to the screen
@@ -391,46 +462,58 @@ namespace BrightEyes.Renderer
 
             lock (_lockObject)
             {
+                // Create texture with full mip-chain and enable auto-gen mips
                 var desc = new Texture2DDescription
                 {
                     Width = width,
                     Height = height,
-                    MipLevels = 1,
+                    MipLevels = 0, // full chain
                     ArraySize = 1,
                     Format = Format.R32G32B32A32_Float,
                     SampleDescription = new SampleDescription(1, 0),
-                    Usage = ResourceUsage.Immutable,
-                    BindFlags = BindFlags.ShaderResource,
+                    Usage = ResourceUsage.Default,
+                    BindFlags = BindFlags.ShaderResource | BindFlags.RenderTarget,
                     CPUAccessFlags = CpuAccessFlags.None,
-                    MiscFlags = ResourceOptionFlags.None
+                    MiscFlags = ResourceOptionFlags.GenerateMips
                 };
+
+                var newTexture = _device.CreateTexture2D(desc);
 
                 int rowPitchBytes = width * sizeof(float) * 4;
                 GCHandle handle = GCHandle.Alloc(rgba32f, GCHandleType.Pinned);
                 try
                 {
-                    var subresource = new SubresourceData(handle.AddrOfPinnedObject(), rowPitchBytes, 0);
-                    var newTexture = _device.CreateTexture2D(desc, new[] { subresource });
-
-                    // Replace current external texture
-                    _externalTextureShaderResourceView?.Dispose();
-                    if (_externalTextureOwned)
+                    if (_deviceContext == null)
                     {
-                        _externalTexture?.Dispose();
+                        throw new InvalidOperationException("Device context not initialized.");
                     }
-                    _externalTexture = newTexture;
-                    _externalTextureOwned = true;
-                    _externalTextureIsRec2020PQ = isRec2020PQ;
-                    _externalTextureShaderResourceView = _device.CreateShaderResourceView(_externalTexture);
-
-                    _sourceWidth = width;
-                    _sourceHeight = height;
-                    UpdateViewport();
+                    _deviceContext.UpdateSubresource(new MappedSubresource(handle.AddrOfPinnedObject(), rowPitchBytes, 0), newTexture, 0);
                 }
                 finally
                 {
                     handle.Free();
                 }
+
+                // Replace current external texture
+                _externalTextureShaderResourceView?.Dispose();
+                if (_externalTextureOwned)
+                {
+                    _externalTexture?.Dispose();
+                }
+                _externalTexture = newTexture;
+                _externalTextureOwned = true;
+                _externalTextureIsRec2020PQ = isRec2020PQ;
+                _externalTextureShaderResourceView = _device.CreateShaderResourceView(_externalTexture);
+
+                // Generate mipmaps for better minification quality
+                if (_deviceContext != null && _externalTextureShaderResourceView != null)
+                {
+                    _deviceContext.GenerateMips(_externalTextureShaderResourceView);
+                }
+
+                _sourceWidth = width;
+                _sourceHeight = height;
+                UpdateViewport();
             }
         }
 
@@ -448,6 +531,8 @@ namespace BrightEyes.Renderer
            _presentPixelShader?.Dispose();
            _toneMappingEffect?.Dispose();
            _linearClampSampler?.Dispose();
+           _pointClampSampler?.Dispose();
+           _scaleConstantBuffer?.Dispose();
            _externalTextureShaderResourceView?.Dispose();
            if (_externalTextureOwned)
            {
@@ -502,6 +587,26 @@ namespace BrightEyes.Renderer
 
             var viewport = new Viewport(vpX, vpY, vpWidth, vpHeight, 0.0f, 1.0f);
             _deviceContext.RSSetViewport(viewport);
+        }
+
+        /// <summary>
+        /// Sets SDR background color used for clears. Values are in [0,1].
+        public void SetSdrBackgroundColor(float red, float green, float blue, float alpha = 1.0f)
+        {
+            lock (_lockObject)
+            {
+                _sdrBackgroundColor = new Color4(red, green, blue, alpha);
+            }
+        }
+
+        /// Sets HDR background color used for clears when presenting in HDR.
+        /// Values are linear in [0,1] in the swapchain target space (PQ mapped by OS).
+        public void SetHdrBackgroundColor(float red, float green, float blue, float alpha = 1.0f)
+        {
+            lock (_lockObject)
+            {
+                _hdrBackgroundColor = new Color4(red, green, blue, alpha);
+            }
         }
     }
 }
