@@ -37,13 +37,13 @@
             <r:RibbonTab Header="{DynamicResource ResourceKey=Ribbon_Tab_File}">
                 <r:RibbonGroup Header="文件">
                     <r:RibbonButton Label="新建" LargeImageSource="/BrightEyes;component/Resources/NewNodeGraph.png" />
-                    <r:RibbonButton Label="打开" LargeImageSource="/BrightEyes;component/Resources/open.png" />
+                    <r:RibbonButton Label="打开" LargeImageSource="/BrightEyes;component/Resources/open.png" Command="{Binding OpenImageCommand}" />
                     <r:RibbonButton Label="保存" LargeImageSource="/BrightEyes;component/Resources/save.png" />
                     <r:RibbonButton Label="另存为" LargeImageSource="/BrightEyes;component/Resources/export.png" />
                     <r:RibbonButton Label="关闭" LargeImageSource="/BrightEyes;component/Resources/CrossMark.png" />
                 </r:RibbonGroup>
                 <r:RibbonGroup Header="导入/导出">
-                    <r:RibbonButton Label="导入图像" LargeImageSource="/BrightEyes;component/Resources/load.png" />
+                    <r:RibbonButton Label="导入图像" LargeImageSource="/BrightEyes;component/Resources/load.png" Command="{Binding OpenImageCommand}" />
                     <r:RibbonButton Label="导入文件夹" LargeImageSource="/BrightEyes;component/Resources/WorkFolder.png" />
                     <r:RibbonButton Label="导出图像" LargeImageSource="/BrightEyes;component/Resources/export.png" />
                     <r:RibbonButton Label="导出序列" LargeImageSource="/BrightEyes;component/Resources/ExportImage.png" />
@@ -103,7 +103,7 @@
                 </r:RibbonGroup>
                 <r:RibbonGroup Header="HDR">
                     <r:RibbonButton Label="启用色调映射" LargeImageSource="/BrightEyes;component/Resources/HDRDisplay.png" />
-                    <r:RibbonButton Label="显示HDR元数据" LargeImageSource="/BrightEyes;component/Resources/ResourcesLibrary.png" />
+                    <r:RibbonButton Label="显示HDR元数据" LargeImageSource="/BrightEyes;component/Resources/ResourcesLibrary.png" Command="{Binding InspectCodecCommand}" />
                 </r:RibbonGroup>
             </r:RibbonTab>
         </r:Ribbon>

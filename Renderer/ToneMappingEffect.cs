@@ -11,6 +11,7 @@ namespace BrightEyes.Renderer
     {
         private ID3D11VertexShader? _vertexShader;
         private ID3D11PixelShader? _pixelShader;
+        private ID3D11SamplerState? _linearClampSampler;
 
         public ToneMappingEffect(ID3D11Device device)
         {
@@ -24,6 +25,15 @@ namespace BrightEyes.Renderer
 
             var pixelShaderByteCode = Compiler.CompileFromFile(psPath, "main", "ps_5_0");
             _pixelShader = device.CreatePixelShader(pixelShaderByteCode.Span);
+
+            var samplerDesc = new SamplerDescription
+            {
+                Filter = Vortice.Direct3D11.Filter.MinMagMipLinear,
+                AddressU = Vortice.Direct3D11.TextureAddressMode.Clamp,
+                AddressV = Vortice.Direct3D11.TextureAddressMode.Clamp,
+                AddressW = Vortice.Direct3D11.TextureAddressMode.Clamp
+            };
+            _linearClampSampler = device.CreateSamplerState(samplerDesc);
         }
 
         public void Apply(ID3D11DeviceContext context, ID3D11ShaderResourceView source, ID3D11RenderTargetView destination)
@@ -33,6 +43,10 @@ namespace BrightEyes.Renderer
             context.VSSetShader(_vertexShader);
             context.PSSetShader(_pixelShader);
             context.PSSetShaderResources(0, new[] { source });
+            if (_linearClampSampler != null)
+            {
+                context.PSSetSamplers(0, new[] { _linearClampSampler });
+            }
             context.IASetPrimitiveTopology(Vortice.Direct3D.PrimitiveTopology.TriangleList);
             context.Draw(3, 0);
         }
@@ -41,6 +55,7 @@ namespace BrightEyes.Renderer
         {
             _vertexShader?.Dispose();
             _pixelShader?.Dispose();
+            _linearClampSampler?.Dispose();
         }
     }
 }
