@@ -105,6 +105,20 @@
                     <r:RibbonButton Label="启用色调映射" LargeImageSource="/BrightEyes;component/Resources/HDRDisplay.png" />
                     <r:RibbonButton Label="显示HDR元数据" LargeImageSource="/BrightEyes;component/Resources/ResourcesLibrary.png" Command="{Binding InspectCodecCommand}" />
                 </r:RibbonGroup>
+                <r:RibbonGroup Header="BCM v0">
+                    <r:RibbonTextBox Label="SDR Reference White (nit)"
+                                     Width="118"
+                                     Text="{Binding SdrReferenceWhiteText, UpdateSourceTrigger=PropertyChanged}"
+                                     IsEnabled="{Binding IsSdrCalibrationEnabled}" />
+                    <r:RibbonTextBox Label="SDR Display Luminance (nit)"
+                                     Width="118"
+                                     Text="{Binding SdrDisplayLuminanceText, UpdateSourceTrigger=PropertyChanged}"
+                                     IsEnabled="{Binding IsSdrCalibrationEnabled}" />
+                    <TextBlock Text="{Binding DisplayColorSummary}"
+                               TextWrapping="Wrap"
+                               Width="180"
+                               Margin="4,2,4,0" />
+                </r:RibbonGroup>
             </r:RibbonTab>
         </r:Ribbon>
 

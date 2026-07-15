@@ -30,7 +30,7 @@ namespace BrightEyes.Renderer
         private ID3D11PixelShader? _pixelShader;
         private ID3D11PixelShader? _presentPixelShader;
         private ID3D11ShaderResourceView? _hdrShaderResourceView;
-        private ToneMappingEffect? _toneMappingEffect;
+        private ColorManagementEffect? _colorManagementEffect;
 
         private ID3D11SamplerState? _linearClampSampler;
         private ID3D11SamplerState? _pointClampSampler;
@@ -47,6 +47,7 @@ namespace BrightEyes.Renderer
         private ID3D11Texture2D? _externalTexture;
         private ID3D11ShaderResourceView? _externalTextureShaderResourceView;
         private bool _externalTextureIsRec2020PQ = true;
+        private ColorSourceMetadata _externalColorMetadata = ColorSourceMetadata.PqRec2020Opaque;
         private bool _externalTextureOwned = false;
 
         private Thread? _renderThread;
@@ -63,6 +64,13 @@ namespace BrightEyes.Renderer
         // HDR default: slightly brighter, low-saturation blue (kept below peak white)
         private Color4 _hdrBackgroundColor = new Color4(0.58f, 0.59f, 0.62f, 1.0f);
         private bool _isHdrOutput = false;
+        private DisplayColorMetadata _displayColorMetadata = DisplayColorMetadata.SdrFallback;
+        private float _sdrReferenceWhiteNits = 100.0f;
+        private float _sdrDisplayPeakNits = 100.0f;
+        private Vector4 _sdrBackgroundEncoded = new Vector4(0.9725f, 0.9804f, 0.9961f, 1.0f);
+        private Vector4 _hdrBackgroundEncoded = new Vector4(0.58f, 0.59f, 0.62f, 1.0f);
+        private int _scaleSourceWidth = -1;
+        private int _scaleSourceHeight = -1;
 
         public RendererD3D11(IntPtr windowHandle, int width, int height)
         {
@@ -70,6 +78,15 @@ namespace BrightEyes.Renderer
             _width = width;
             _height = height;
         }
+
+        public DisplayColorMetadata DisplayColorMetadata => _displayColorMetadata;
+
+        public bool IsHdrOutput => _isHdrOutput;
+
+        private const uint MonitorDefaultToNearest = 2;
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr MonitorFromWindow(IntPtr windowHandle, uint flags);
 
         public void Initialize()
         {
@@ -110,34 +127,19 @@ namespace BrightEyes.Renderer
                     _windowHandle,
                     swapChainDescription
                 );
-                // --- HDR Support Detection ---
+                // Query the output nearest this window instead of assuming adapter/output zero.
                 bool hdrSupported = false;
+                DisplayColorMetadata displayMetadata = DisplayColorMetadata.SdrFallback;
                 try
                 {
-                    using (var factory1 = factory.QueryInterface<IDXGIFactory1>())
-                    {
-                        factory1.EnumAdapters1(0, out var adapter).CheckError();
-                        using (adapter)
-                        {
-                            adapter.EnumOutputs(0, out var output).CheckError();
-                            using (output)
-                            {
-                                using (var output6 = output.QueryInterface<IDXGIOutput6>())
-                                {
-                                    var desc1 = output6.Description1;
-                                    if ((desc1.ColorSpace == ColorSpaceType.RgbFullG2084NoneP2020))
-                                    {
-                                        hdrSupported = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    displayMetadata = DetectDisplayMetadata(factory);
+                    hdrSupported = displayMetadata.IsHdr;
                 }
                 catch (Exception ex)
                 {
                     Debug.WriteLine($"Could not detect HDR support: {ex.Message}");
                     hdrSupported = false; // Fallback to SDR
+                    displayMetadata = DisplayColorMetadata.SdrFallback;
                 }
                 finally
                 {
@@ -154,15 +156,31 @@ namespace BrightEyes.Renderer
                         {
                             swapChain3.SetColorSpace1(colorSpace);
                         }
+                        else
+                        {
+                            // An HDR-capable output is not enough: the actual
+                            // swap chain must be able to present HDR10.
+                            hdrSupported = false;
+                            displayMetadata = displayMetadata with { IsHdr = false };
+                        }
                     }
                 }
                 else
                 {
-                    Debug.WriteLine("SDR display detected or HDR support check failed. Using default SDR color space.");
+                    using (var swapChain3 = _swapChain.QueryInterface<IDXGISwapChain3>())
+                    {
+                        const ColorSpaceType colorSpace = ColorSpaceType.RgbFullG22NoneP709;
+                        if (swapChain3.CheckColorSpaceSupport(colorSpace).HasFlag(SwapChainColorSpaceSupportFlags.Present))
+                        {
+                            swapChain3.SetColorSpace1(colorSpace);
+                        }
+                    }
+                    Debug.WriteLine("SDR display detected. Using the sRGB/Rec.709 terminal color space.");
                 }
 
                 // Track whether swapchain is presenting in HDR colorspace
                 _isHdrOutput = hdrSupported;
+                _displayColorMetadata = displayMetadata with { IsHdr = hdrSupported };
 
                 CreateResources();
 
@@ -178,10 +196,10 @@ namespace BrightEyes.Renderer
                var pixelShaderByteCode = Compiler.CompileFromFile(psPath, "main", "ps_5_0");
                _pixelShader = _device.CreatePixelShader(pixelShaderByteCode.Span);
 
-               var presentPsByteCode = Compiler.CompileFromFile(presentPsPath, "main", "ps_5_0");
-               _presentPixelShader = _device.CreatePixelShader(presentPsByteCode.Span);
+                var presentPsByteCode = Compiler.CompileFromFile(presentPsPath, "main", "ps_5_0");
+                _presentPixelShader = _device.CreatePixelShader(presentPsByteCode.Span);
 
-               _toneMappingEffect = new ToneMappingEffect(_device);
+               _colorManagementEffect = new ColorManagementEffect(_device);
 
                // Create a default linear clamp sampler for tone-mapped sampling
                var samplerDesc = new SamplerDescription
@@ -224,6 +242,60 @@ namespace BrightEyes.Renderer
             }
         }
 
+        private DisplayColorMetadata DetectDisplayMetadata(IDXGIFactory2 factory)
+        {
+            IntPtr targetMonitor = MonitorFromWindow(_windowHandle, MonitorDefaultToNearest);
+            bool hasSystemSdrWhite = false;
+            float systemSdrWhiteNits = 0.0f;
+            try
+            {
+                hasSystemSdrWhite = WindowsDisplayMetadata.TryGetSdrWhiteLevelNits(targetMonitor, out systemSdrWhiteNits);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Could not query the system SDR white level: {ex.Message}");
+            }
+            DisplayColorMetadata? firstOutput = null;
+            using var factory1 = factory.QueryInterface<IDXGIFactory1>();
+            for (int adapterIndex = 0; ; adapterIndex++)
+            {
+                if (factory1.EnumAdapters1(adapterIndex, out var adapter).Failure)
+                {
+                    break;
+                }
+                using (adapter)
+                {
+                    for (int outputIndex = 0; ; outputIndex++)
+                    {
+                        if (adapter.EnumOutputs(outputIndex, out var output).Failure)
+                        {
+                            break;
+                        }
+                        using (output)
+                        using (var output6 = output.QueryInterface<IDXGIOutput6>())
+                        {
+                            var description = output6.Description1;
+                            bool isHdr = description.ColorSpace == ColorSpaceType.RgbFullG2084NoneP2020;
+                            var metadata = new DisplayColorMetadata(
+                                isHdr,
+                                Math.Max(description.MinLuminance, 0.0f),
+                                Math.Max(description.MaxLuminance, 0.0f),
+                                Math.Max(description.MaxFullFrameLuminance, 0.0f),
+                                hasSystemSdrWhite ? systemSdrWhiteNits : (isHdr ? 203.0f : 100.0f),
+                                hasSystemSdrWhite,
+                                description.ColorSpace.ToString());
+                            firstOutput ??= metadata;
+                            if (targetMonitor == IntPtr.Zero || description.Monitor == targetMonitor)
+                            {
+                                return metadata;
+                            }
+                        }
+                    }
+                }
+            }
+            return firstOutput ?? DisplayColorMetadata.SdrFallback;
+        }
+
         private void CreateResources()
         {
             using (var backBuffer = _swapChain.GetBuffer<ID3D11Texture2D>(0))
@@ -257,6 +329,10 @@ namespace BrightEyes.Renderer
             {
                 return;
             }
+            if (_scaleSourceWidth == sourceWidth && _scaleSourceHeight == sourceHeight)
+            {
+                return;
+            }
 
             var constants = new ScaleConstants
             {
@@ -273,6 +349,8 @@ namespace BrightEyes.Renderer
             {
                 _deviceContext.Unmap(_scaleConstantBuffer, 0);
             }
+            _scaleSourceWidth = sourceWidth;
+            _scaleSourceHeight = sourceHeight;
         }
 
         public void Start()
@@ -293,16 +371,18 @@ namespace BrightEyes.Renderer
                     if (_externalTextureShaderResourceView != null)
                     {
                         // External texture path
-                        if (_externalTextureIsRec2020PQ)
+                        if (_externalTextureIsRec2020PQ &&
+                            _externalColorMetadata.Alpha == AlphaRepresentation.Opaque &&
+                            _isHdrOutput)
                         {
-                            // Direct present (pass-through) to swap chain backbuffer
+                            // Direct present (pass-through) to swap chain backbuffer.
                             _deviceContext.OMSetRenderTargets(_renderTargetView);
                             _deviceContext.VSSetShader(_vertexShader);
                             _deviceContext.PSSetShader(_presentPixelShader);
                             _deviceContext.PSSetShaderResources(0, new[] { _externalTextureShaderResourceView });
-                            UpdateScaleConstants(_sourceWidth, _sourceHeight);
                             if (_scaleConstantBuffer != null)
                             {
+                                UpdateScaleConstants(_sourceWidth, _sourceHeight);
                                 _deviceContext.PSSetConstantBuffers(0, new[] { _scaleConstantBuffer });
                             }
                             if (_pointClampSampler != null)
@@ -314,13 +394,25 @@ namespace BrightEyes.Renderer
                         }
                         else
                         {
-                            // Fall back to tone mapping pipeline if the source is not PQ Rec.2020
-                            _toneMappingEffect?.Apply(_deviceContext, _externalTextureShaderResourceView, _renderTargetView, _sourceWidth, _sourceHeight);
+                            // BCM bridge: source -> absolute linear Rec.2020/nits -> terminal encoding.
+                            _colorManagementEffect?.Apply(
+                                _deviceContext,
+                                _externalTextureShaderResourceView,
+                                _renderTargetView,
+                                _sourceWidth,
+                                _sourceHeight,
+                                _externalColorMetadata,
+                                _displayColorMetadata,
+                                _sdrReferenceWhiteNits,
+                                _sdrDisplayPeakNits,
+                                _sdrBackgroundEncoded,
+                                _hdrBackgroundEncoded);
                         }
                     }
                     else
                     {
-                        // Internal test pattern path: render to HDR RT, then present via tone mapping (legacy)
+                        // Internal test pattern path: render to a PQ working texture,
+                        // then pass it through the same BCM terminal bridge.
                         _deviceContext.OMSetRenderTargets(_hdrRenderTargetView);
                         _deviceContext.ClearRenderTargetView(_hdrRenderTargetView, new Color4(0.0f, 0.0f, 0.0f, 1.0f));
                         _deviceContext.VSSetShader(_vertexShader);
@@ -328,7 +420,18 @@ namespace BrightEyes.Renderer
                         _deviceContext.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
                         _deviceContext.Draw(3, 0);
 
-                        _toneMappingEffect?.Apply(_deviceContext, _hdrShaderResourceView, _renderTargetView, _width, _height);
+                        _colorManagementEffect?.Apply(
+                            _deviceContext,
+                            _hdrShaderResourceView,
+                            _renderTargetView,
+                            _width,
+                            _height,
+                            ColorSourceMetadata.PqRec2020Opaque,
+                            _displayColorMetadata,
+                            _sdrReferenceWhiteNits,
+                            _sdrDisplayPeakNits,
+                            _sdrBackgroundEncoded,
+                            _hdrBackgroundEncoded);
                     }
 
                     // Step F: Present the final result to the screen
@@ -339,10 +442,18 @@ namespace BrightEyes.Renderer
         }
 
         /// <summary>
-        /// Sets an external RGBA32F texture as the source to render. Default assumes Rec.2020 PQ encoding.
-        /// The renderer will sample this texture and present directly if PQ; otherwise it will route through tone mapping.
+        /// Sets an external texture as the source to render. The compatibility
+        /// overload preserves the historical PQ/legacy-linear defaults; callers
+        /// that know the exact transfer and gamut should use the metadata overload.
         /// </summary>
         public void SetExternalTexture(ID3D11Texture2D texture, bool isRec2020PQ = true)
+        {
+            SetExternalTexture(texture, isRec2020PQ
+                ? ColorSourceMetadata.PqRec2020Opaque
+                : ColorSourceMetadata.LegacyLinearProPhoto);
+        }
+
+        public void SetExternalTexture(ID3D11Texture2D texture, ColorSourceMetadata colorMetadata)
         {
             if (_device == null)
             {
@@ -358,7 +469,9 @@ namespace BrightEyes.Renderer
                 }
 
                 _externalTexture = texture; // Borrowed: do not Dispose on Clear/Dispose
-                _externalTextureIsRec2020PQ = isRec2020PQ;
+                _externalColorMetadata = colorMetadata.Normalize();
+                _externalTextureIsRec2020PQ = _externalColorMetadata.Transfer == ColorTransferFunction.Pq &&
+                                               _externalColorMetadata.Primaries == ColorPrimaries.Rec2020;
                 _externalTextureShaderResourceView = _device.CreateShaderResourceView(texture);
                 _externalTextureOwned = false;
 
@@ -376,6 +489,13 @@ namespace BrightEyes.Renderer
         /// </summary>
         public void SetExternalTextureFromSharedHandle(IntPtr sharedHandle, bool isRec2020PQ = true)
         {
+            SetExternalTextureFromSharedHandle(sharedHandle, isRec2020PQ
+                ? ColorSourceMetadata.PqRec2020Opaque
+                : ColorSourceMetadata.LegacyLinearProPhoto);
+        }
+
+        public void SetExternalTextureFromSharedHandle(IntPtr sharedHandle, ColorSourceMetadata colorMetadata)
+        {
             if (_device == null)
             {
                 throw new InvalidOperationException("Renderer not initialized.");
@@ -390,7 +510,9 @@ namespace BrightEyes.Renderer
 
                 var openedTexture = _device.OpenSharedResource<ID3D11Texture2D>(sharedHandle);
                 _externalTexture = openedTexture; // Owned by renderer
-                _externalTextureIsRec2020PQ = isRec2020PQ;
+                _externalColorMetadata = colorMetadata.Normalize();
+                _externalTextureIsRec2020PQ = _externalColorMetadata.Transfer == ColorTransferFunction.Pq &&
+                                               _externalColorMetadata.Primaries == ColorPrimaries.Rec2020;
                 _externalTextureShaderResourceView = _device.CreateShaderResourceView(openedTexture);
                 _externalTextureOwned = true;
 
@@ -416,6 +538,8 @@ namespace BrightEyes.Renderer
                 }
                 _externalTexture = null;
                 _externalTextureOwned = false;
+                _externalColorMetadata = ColorSourceMetadata.Sdr;
+                _externalTextureIsRec2020PQ = false;
 
                 // Reset to full-area viewport when no external content
                 _sourceWidth = 0;
@@ -451,6 +575,13 @@ namespace BrightEyes.Renderer
         /// Creates a GPU texture from CPU-side RGBA32F data and sets it as the external source.
         /// </summary>
         public void SetExternalTextureFromRgba32f(float[] rgba32f, int width, int height, bool isRec2020PQ = true)
+        {
+            SetExternalTextureFromRgba32f(rgba32f, width, height, isRec2020PQ
+                ? ColorSourceMetadata.PqRec2020Opaque
+                : ColorSourceMetadata.LegacyLinearProPhoto);
+        }
+
+        public void SetExternalTextureFromRgba32f(float[] rgba32f, int width, int height, ColorSourceMetadata colorMetadata)
         {
             if (_device == null)
             {
@@ -502,7 +633,9 @@ namespace BrightEyes.Renderer
                 }
                 _externalTexture = newTexture;
                 _externalTextureOwned = true;
-                _externalTextureIsRec2020PQ = isRec2020PQ;
+                _externalColorMetadata = colorMetadata.Normalize();
+                _externalTextureIsRec2020PQ = _externalColorMetadata.Transfer == ColorTransferFunction.Pq &&
+                                               _externalColorMetadata.Primaries == ColorPrimaries.Rec2020;
                 _externalTextureShaderResourceView = _device.CreateShaderResourceView(_externalTexture);
 
                 // Generate mipmaps for better minification quality
@@ -517,6 +650,67 @@ namespace BrightEyes.Renderer
             }
         }
 
+        /// <summary>
+        /// Uploads PhotoSauce's normalized BGRA8 output to the existing tone-mapping pipeline.
+        /// This avoids the large CPU-side RGBA32F expansion used by HDR sources.
+        /// </summary>
+        public void SetExternalTextureFromBgra32(byte[] bgra, int width, int height)
+        {
+            SetExternalTextureFromBgra32(bgra, width, height, ColorSourceMetadata.Sdr);
+        }
+
+        public void SetExternalTextureFromBgra32(
+            byte[] bgra,
+            int width,
+            int height,
+            ColorSourceMetadata colorMetadata)
+        {
+            if (_device == null) throw new InvalidOperationException("Renderer not initialized.");
+            if (bgra == null) throw new ArgumentNullException(nameof(bgra));
+            int rowPitch = checked(width * 4);
+            if (width <= 0 || height <= 0 || bgra.Length < checked(rowPitch * height)) throw new ArgumentException("Invalid BGRA image buffer.", nameof(bgra));
+
+            lock (_lockObject)
+            {
+                var desc = new Texture2DDescription
+                {
+                    Width = width,
+                    Height = height,
+                    MipLevels = 0,
+                    ArraySize = 1,
+                    Format = Format.B8G8R8A8_UNorm,
+                    SampleDescription = new SampleDescription(1, 0),
+                    Usage = ResourceUsage.Default,
+                    BindFlags = BindFlags.ShaderResource | BindFlags.RenderTarget,
+                    MiscFlags = ResourceOptionFlags.GenerateMips
+                };
+                var texture = _device.CreateTexture2D(desc);
+                var handle = GCHandle.Alloc(bgra, GCHandleType.Pinned);
+                try
+                {
+                    _deviceContext!.UpdateSubresource(new MappedSubresource(handle.AddrOfPinnedObject(), rowPitch, 0), texture, 0);
+                }
+                finally { handle.Free(); }
+                ReplaceExternalTexture(texture, colorMetadata);
+                _deviceContext!.GenerateMips(_externalTextureShaderResourceView!);
+                _sourceWidth = width;
+                _sourceHeight = height;
+                UpdateViewport();
+            }
+        }
+
+        private void ReplaceExternalTexture(ID3D11Texture2D texture, ColorSourceMetadata colorMetadata)
+        {
+            _externalTextureShaderResourceView?.Dispose();
+            if (_externalTextureOwned) _externalTexture?.Dispose();
+            _externalTexture = texture;
+            _externalTextureOwned = true;
+            _externalColorMetadata = colorMetadata.Normalize();
+            _externalTextureIsRec2020PQ = _externalColorMetadata.Transfer == ColorTransferFunction.Pq &&
+                                           _externalColorMetadata.Primaries == ColorPrimaries.Rec2020;
+            _externalTextureShaderResourceView = _device!.CreateShaderResourceView(texture);
+        }
+
         public void Dispose()
         {
             _isRunning = false;
@@ -529,7 +723,7 @@ namespace BrightEyes.Renderer
            _vertexShader?.Dispose();
            _pixelShader?.Dispose();
            _presentPixelShader?.Dispose();
-           _toneMappingEffect?.Dispose();
+            _colorManagementEffect?.Dispose();
            _linearClampSampler?.Dispose();
            _pointClampSampler?.Dispose();
            _scaleConstantBuffer?.Dispose();
@@ -596,6 +790,7 @@ namespace BrightEyes.Renderer
             lock (_lockObject)
             {
                 _sdrBackgroundColor = new Color4(red, green, blue, alpha);
+                _sdrBackgroundEncoded = new Vector4(red, green, blue, alpha);
             }
         }
 
@@ -606,7 +801,24 @@ namespace BrightEyes.Renderer
             lock (_lockObject)
             {
                 _hdrBackgroundColor = new Color4(red, green, blue, alpha);
+                _hdrBackgroundEncoded = new Vector4(red, green, blue, alpha);
             }
         }
+
+        /// <summary>
+        /// Sets the two SDR calibration values used when the active output is
+        /// SDR. They are ignored by the bridge while HDR output is active.
+        /// </summary>
+        public void SetSdrCalibration(float referenceWhiteNits, float displayPeakNits)
+        {
+            lock (_lockObject)
+            {
+                _sdrReferenceWhiteNits = NormalizePositive(referenceWhiteNits, 100.0f);
+                _sdrDisplayPeakNits = NormalizePositive(displayPeakNits, 100.0f);
+            }
+        }
+
+        private static float NormalizePositive(float value, float fallback) =>
+            float.IsFinite(value) && value > 0.0f ? value : fallback;
     }
 }

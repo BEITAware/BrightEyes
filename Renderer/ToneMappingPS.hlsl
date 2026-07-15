@@ -15,6 +15,8 @@ cbuffer ScaleCB : register(b0)
 {
     float2 SourceSize;      // (width, height)
     float2 SourceTexelSize; // (1/width, 1/height)
+    float InputIsSdr;       // 1 when SourceTexture contains normalized sRGB pixels
+    float3 Padding;
 };
 
 //=================================================================================================
@@ -91,6 +93,20 @@ static const float3x3 XYZ_D65_TO_REC2020 =
     -0.2533663,  0.0157680,  1.2111303
 };
 
+// Rec.709/sRGB linear to Rec.2020 linear. Transposed for
+// mul(rowVector, matrix), matching the convention used below.
+static const float3x3 REC709_TO_REC2020 =
+{
+    0.6274040, 0.0690970, 0.0163916,
+    0.3292820, 0.9195400, 0.0880132,
+    0.0433136, 0.0113612, 0.8955950
+};
+
+float SrgbToLinear(float value)
+{
+    return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4);
+}
+
 //=================================================================================================
 // PQ EOTF (PERCEPTUAL QUANTIZER)
 //
@@ -128,14 +144,19 @@ float LinearToPQ(float linearValue)
 
 float4 main(PS_INPUT input) : SV_TARGET
 {
-    // Step 1: Sample the linear HDR color from the source texture using bicubic filtering.
-    float4 proPhotoColor = SampleBicubic(SourceTexture, Sampler, input.TexCoord);
-
-    // Step 2: Convert from linear ProPhoto RGB (D65) to CIE XYZ (D65).
-    float3 xyzColor = mul(proPhotoColor.rgb, PROPHOTO_D65_TO_XYZ_D65);
-
-    // Step 3: Convert from CIE XYZ (D65) to linear Rec.2020 RGB (D65).
-    float3 rec2020Linear = mul(xyzColor, XYZ_D65_TO_REC2020);
+    float4 sourceColor = SampleBicubic(SourceTexture, Sampler, input.TexCoord);
+    float3 rec2020Linear;
+    if (InputIsSdr > 0.5)
+    {
+        float3 linear709 = float3(SrgbToLinear(sourceColor.r), SrgbToLinear(sourceColor.g), SrgbToLinear(sourceColor.b));
+        // Map SDR reference white to 100 nits before encoding to PQ.
+        rec2020Linear = mul(linear709, REC709_TO_REC2020) * 100.0;
+    }
+    else
+    {
+        float3 xyzColor = mul(sourceColor.rgb, PROPHOTO_D65_TO_XYZ_D65);
+        rec2020Linear = mul(xyzColor, XYZ_D65_TO_REC2020);
+    }
 
     // Step 4: Apply the PQ EOTF to each color component.
     float3 rec2020_PQ;
@@ -144,5 +165,5 @@ float4 main(PS_INPUT input) : SV_TARGET
     rec2020_PQ.b = LinearToPQ(rec2020Linear.b);
 
     // Step 5: Output the final PQ-encoded Rec.2020 color, preserving the original alpha.
-    return float4(rec2020_PQ, proPhotoColor.a);
+    return float4(rec2020_PQ, sourceColor.a);
 }
