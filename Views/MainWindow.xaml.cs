@@ -8,7 +8,10 @@ using Point = System.Windows.Point;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using DragEventArgs = System.Windows.DragEventArgs;
 using DragDropEffects = System.Windows.DragDropEffects;
-using Brush = System.Windows.Media.Brush;
+using GiveFeedbackEventArgs = System.Windows.GiveFeedbackEventArgs;
+using IDataObject = System.Windows.IDataObject;
+using FormsCursor = System.Windows.Forms.Cursor;
+using WpfCursors = System.Windows.Input.Cursors;
 
 namespace BrightEyes.Views;
 
@@ -16,6 +19,10 @@ public partial class MainWindow : Window
 {
     private Point _dragStart;
     private object? _dragCandidate;
+    private object? _activeDragPayload;
+    private bool _dropCommitted;
+    private int _dropTargetIndex = -1;
+    private bool? _dropTargetCompatible;
 
     public MainWindow()
     {
@@ -40,8 +47,7 @@ public partial class MainWindow : Window
     {
         if (e.LeftButton != MouseButtonState.Pressed || _dragCandidate is not ProcessCatalogItemViewModel item || !MovedEnough(e.GetPosition(this)))
             return;
-        DragDrop.DoDragDrop((DependencyObject)sender, item.Descriptor, DragDropEffects.Copy);
-        _dragCandidate = null;
+        RunDrag((DependencyObject)sender, item.Descriptor, DragDropEffects.Copy);
     }
 
     private void PipelineList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -55,90 +61,195 @@ public partial class MainWindow : Window
     {
         if (e.LeftButton != MouseButtonState.Pressed || _dragCandidate is not IImageProcess process || !MovedEnough(e.GetPosition(this)))
             return;
-        DragDrop.DoDragDrop(PipelineList, process, DragDropEffects.Move);
-        _dragCandidate = null;
-        ClearDropTarget();
+        RunDrag(PipelineList, process, DragDropEffects.Move);
     }
 
-    private void PipelineList_DragOver(object sender, DragEventArgs e)
+    private void RunDrag(DependencyObject source, object payload, DragDropEffects effect)
     {
-        int index = GetInsertionIndex(e.GetPosition(PipelineList));
-        string reason = "没有活动文档。";
-        bool allowed;
-        if (e.Data.GetDataPresent(typeof(ProcessDescriptor)))
+        _activeDragPayload = payload;
+        _dropCommitted = false;
+        UpdateDropPreview(payload, GetPointerPositionInPipeline());
+        try
         {
-            var descriptor = (ProcessDescriptor)e.Data.GetData(typeof(ProcessDescriptor))!;
-            allowed = ViewModel.ActiveDocument?.CanInsert(descriptor, index, out reason) == true;
+            DragDrop.DoDragDrop(source, payload, effect);
+            if (!_dropCommitted)
+                CommitDrop(payload, GetPointerPositionInPipeline());
         }
-        else if (e.Data.GetDataPresent(typeof(IImageProcess)))
+        finally
         {
-            var process = (IImageProcess)e.Data.GetData(typeof(IImageProcess))!;
-            allowed = ViewModel.ActiveDocument?.CanMove(process, index, out reason) == true;
+            _activeDragPayload = null;
+            _dragCandidate = null;
+            ClearDropPreview();
         }
-        else
+    }
+
+    private void PipelineDragOver(object sender, DragEventArgs e)
+    {
+        object? payload = GetDragPayload(e.Data) ?? _activeDragPayload;
+        if (payload is null)
         {
-            allowed = false;
-            reason = "拖动载荷不是已注册过程。";
+            e.Effects = DragDropEffects.None;
+            return;
         }
 
-        e.Effects = allowed
-            ? (e.Data.GetDataPresent(typeof(ProcessDescriptor)) ? DragDropEffects.Copy : DragDropEffects.Move)
-            : DragDropEffects.None;
-        PipelineList.ToolTip = reason;
-        MarkDropTarget(index, allowed);
+        UpdateDropPreview(payload, e.GetPosition(PipelineList));
+        e.Effects = payload is ProcessDescriptor ? DragDropEffects.Copy : DragDropEffects.Move;
         e.Handled = true;
     }
 
-    private void PipelineList_DragLeave(object sender, DragEventArgs e) => ClearDropTarget();
-
-    private void PipelineList_Drop(object sender, DragEventArgs e)
+    private void PipelineDragGiveFeedback(object sender, GiveFeedbackEventArgs e)
     {
-        int index = GetInsertionIndex(e.GetPosition(PipelineList));
-        if (e.Data.GetDataPresent(typeof(ProcessDescriptor)))
-        {
-            var descriptor = (ProcessDescriptor)e.Data.GetData(typeof(ProcessDescriptor))!;
-            ViewModel.TryInsertProcess(descriptor, index, out _);
-        }
-        else if (e.Data.GetDataPresent(typeof(IImageProcess)))
-        {
-            var process = (IImageProcess)e.Data.GetData(typeof(IImageProcess))!;
-            ViewModel.TryMoveProcess(process, index, out _);
-        }
-        ClearDropTarget();
+        if (_activeDragPayload is not null)
+            UpdateDropPreview(_activeDragPayload, GetPointerPositionInPipeline());
+        e.UseDefaultCursors = false;
+        Mouse.SetCursor(WpfCursors.SizeAll);
         e.Handled = true;
     }
 
-    private int GetInsertionIndex(Point point)
+    private void PipelineDrop(object sender, DragEventArgs e)
     {
+        object? payload = GetDragPayload(e.Data) ?? _activeDragPayload;
+        if (payload is null)
+        {
+            e.Effects = DragDropEffects.None;
+            return;
+        }
+
+        CommitDrop(payload, e.GetPosition(PipelineList));
+        e.Effects = payload is ProcessDescriptor ? DragDropEffects.Copy : DragDropEffects.Move;
+        e.Handled = true;
+    }
+
+    private void UpdateDropPreview(object payload, Point point)
+    {
+        int index = GetNearestInsertionIndex(point);
+        bool compatible = GetPlacementCompatibility(payload, index, out string reason);
+        MarkDropTarget(index, compatible);
+        PipelineHint.Text = compatible
+            ? $"释放后放入插槽 {index + 1}/{PipelineList.Items.Count + 1}"
+            : $"仍将放入插槽 {index + 1}/{PipelineList.Items.Count + 1}；{reason}";
+    }
+
+    private void CommitDrop(object payload, Point point)
+    {
+        int index = GetNearestInsertionIndex(point);
+        bool compatible = GetPlacementCompatibility(payload, index, out string reason);
+        bool placed = payload switch
+        {
+            ProcessDescriptor descriptor => ViewModel.TryInsertProcess(descriptor, index, out _),
+            IImageProcess process => ViewModel.TryMoveProcess(process, index, out _),
+            _ => false
+        };
+
+        _dropCommitted = true;
+        ClearDropPreview();
+        PipelineHint.Text = placed || payload is IImageProcess
+            ? compatible
+                ? $"已放入插槽 {index + 1}/{PipelineList.Items.Count + 1}"
+                : $"已放入插槽 {index + 1}/{PipelineList.Items.Count + 1}；错误：{reason}"
+            : $"未能放入：{reason}";
+    }
+
+    private bool GetPlacementCompatibility(object payload, int index, out string reason)
+    {
+        if (ViewModel.ActiveDocument is null)
+        {
+            reason = "没有活动文档。";
+            return false;
+        }
+
+        return payload switch
+        {
+            ProcessDescriptor descriptor => ViewModel.ActiveDocument.CanInsert(descriptor, index, out reason),
+            IImageProcess process => ViewModel.ActiveDocument.CanMove(process, index, out reason),
+            _ => SetUnsupportedPayloadReason(out reason)
+        };
+    }
+
+    private static bool SetUnsupportedPayloadReason(out string reason)
+    {
+        reason = "拖动载荷不是已注册过程。";
+        return false;
+    }
+
+    private int GetNearestInsertionIndex(Point point)
+    {
+        int nearestIndex = 0;
+        double nearestDistance = double.PositiveInfinity;
+
         for (int index = 0; index < PipelineList.Items.Count; index++)
         {
             if (PipelineList.ItemContainerGenerator.ContainerFromIndex(index) is not ListBoxItem item) continue;
             Point top = item.TranslatePoint(new Point(0, 0), PipelineList);
-            if (point.Y < top.Y + item.ActualHeight / 2.0) return index;
+            ConsiderSlot(index, top.Y);
+            ConsiderSlot(index + 1, top.Y + item.ActualHeight);
         }
-        return PipelineList.Items.Count;
+
+        if (double.IsPositiveInfinity(nearestDistance))
+            return point.Y <= PipelineList.ActualHeight / 2.0 ? 0 : PipelineList.Items.Count;
+        return nearestIndex;
+
+        void ConsiderSlot(int index, double y)
+        {
+            double distance = Math.Abs(point.Y - y);
+            bool isCurrentTie = Math.Abs(distance - nearestDistance) < 0.5 && index == _dropTargetIndex;
+            if (distance < nearestDistance - 0.5 || isCurrentTie)
+            {
+                nearestDistance = distance;
+                nearestIndex = index;
+            }
+        }
     }
 
-    private void MarkDropTarget(int index, bool allowed)
+    private Point GetPointerPositionInPipeline()
     {
-        ClearDropTarget();
-        if (!allowed) return;
-        if (index < PipelineList.Items.Count && PipelineList.ItemContainerGenerator.ContainerFromIndex(index) is ListBoxItem item)
-            item.Tag = "DropTarget";
-        else
-            PipelineList.BorderBrush = (Brush)FindResource("IntermediateConnectionBrush");
-        PipelineList.BorderThickness = new Thickness(0, 0, 0, 5);
+        System.Drawing.Point screen = FormsCursor.Position;
+        return PipelineList.PointFromScreen(new Point(screen.X, screen.Y));
     }
 
-    private void ClearDropTarget()
+    private static object? GetDragPayload(IDataObject data)
+    {
+        if (data.GetDataPresent(typeof(ProcessDescriptor)))
+            return data.GetData(typeof(ProcessDescriptor));
+        if (data.GetDataPresent(typeof(IImageProcess)))
+            return data.GetData(typeof(IImageProcess));
+        return null;
+    }
+
+    private void MarkDropTarget(int index, bool compatible)
+    {
+        if (_dropTargetIndex == index && _dropTargetCompatible == compatible) return;
+
+        ClearDropVisuals();
+        _dropTargetIndex = index;
+        _dropTargetCompatible = compatible;
+        PipelineDropSurface.Tag = compatible ? "DropAllowed" : "DropWarning";
+        if (index < PipelineList.Items.Count && PipelineList.ItemContainerGenerator.ContainerFromIndex(index) is ListBoxItem item)
+        {
+            item.Tag = compatible ? "DropTargetBefore" : "DropTargetBeforeWarning";
+        }
+        else if (PipelineList.Items.Count > 0 &&
+                 PipelineList.ItemContainerGenerator.ContainerFromIndex(PipelineList.Items.Count - 1) is ListBoxItem lastItem)
+        {
+            lastItem.Tag = compatible ? "DropTargetAfter" : "DropTargetAfterWarning";
+        }
+    }
+
+    private void ClearDropPreview()
+    {
+        ClearDropVisuals();
+        _dropTargetIndex = -1;
+        _dropTargetCompatible = null;
+    }
+
+    private void ClearDropVisuals()
     {
         foreach (object item in PipelineList.Items)
         {
             if (PipelineList.ItemContainerGenerator.ContainerFromItem(item) is ListBoxItem container)
                 container.ClearValue(TagProperty);
         }
-        PipelineList.BorderThickness = new Thickness(0);
-        PipelineList.ToolTip = null;
+        PipelineDropSurface.ClearValue(TagProperty);
     }
 
     private bool MovedEnough(Point point) =>

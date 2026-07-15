@@ -7,12 +7,38 @@
     <converters:ResourceLookupConverter x:Key="ResourceLookupConverter" />
     <converters:AnalysisDataToBitmapConverter x:Key="AnalysisDataToBitmapConverter" />
 
-    <SolidColorBrush x:Key="ProcessSurfaceBrush" Color="#F8FAFC" />
-    <SolidColorBrush x:Key="ProcessSelectedBrush" Color="#E7F1FA" />
-    <SolidColorBrush x:Key="ProcessBorderBrush" Color="#A5C9E6" />
+    <SolidColorBrush x:Key="ProcessSurfaceBrush" Color="#FFFFFF" />
+    <LinearGradientBrush x:Key="ProcessSelectedBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#F4FAFE" Offset="0" />
+        <GradientStop Color="#E2F0FA" Offset="0.5" />
+        <GradientStop Color="#D4E9F7" Offset="1" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="ProcessBorderBrush" Color="#B8C5CE" />
     <SolidColorBrush x:Key="ProcessDisabledBrush" Color="#E7E9EC" />
     <SolidColorBrush x:Key="ProcessTextBrush" Color="#172B3A" />
     <SolidColorBrush x:Key="ProcessMutedTextBrush" Color="#526675" />
+    <LinearGradientBrush x:Key="ProcessDropSurfaceBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#F1FAFF" Offset="0.38" />
+        <GradientStop Color="#D7EEFC" Offset="0.48" />
+        <GradientStop Color="#B9DFF7" Offset="0.52" />
+        <GradientStop Color="#9DCEED" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessDropWarningSurfaceBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFDF5" Offset="0" />
+        <GradientStop Color="#FFF8DD" Offset="0.38" />
+        <GradientStop Color="#FCE9B4" Offset="0.48" />
+        <GradientStop Color="#F6D57D" Offset="0.52" />
+        <GradientStop Color="#E8B94F" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessDropAreaAllowedBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#F9FCFE" Offset="0" />
+        <GradientStop Color="#E5F2FA" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessDropAreaWarningBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFCF4" Offset="0" />
+        <GradientStop Color="#FBECCB" Offset="1" />
+    </LinearGradientBrush>
     <SolidColorBrush x:Key="RawConnectionBrush" Color="#22AFC7" />
     <SolidColorBrush x:Key="IntermediateConnectionBrush" Color="#7C69C7" />
     <SolidColorBrush x:Key="WarningConnectionBrush" Color="#D97818" />
@@ -31,50 +57,93 @@
         <Setter Property="Margin" Value="0" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Cursor" Value="SizeAll" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBoxItem">
-                    <Border x:Name="InsertionPlaceholder" Background="Transparent" Padding="0">
+                    <Grid>
                         <ContentPresenter />
-                    </Border>
+                        <Border x:Name="DropBefore" Height="56" Margin="3,2,3,0" Panel.ZIndex="2"
+                                VerticalAlignment="Top" Background="{StaticResource ProcessDropSurfaceBrush}"
+                                BorderBrush="#3C7FB1" BorderThickness="1" CornerRadius="2" Visibility="Collapsed">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="34" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.ColumnSpan="2" Margin="1" BorderBrush="#D9FFFFFF"
+                                        BorderThickness="1,1,1,0" CornerRadius="1" IsHitTestVisible="False" />
+                                <Border x:Name="DropBeforeIcon" Grid.Column="0" Width="22" Height="22"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                                        Background="#66FFFFFF" BorderBrush="#8BB9D7" BorderThickness="1" CornerRadius="1">
+                                    <TextBlock x:Name="DropBeforeArrow" Text="&#x25BC;" FontSize="11" Foreground="#185B8B"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <TextBlock x:Name="DropBeforeText" Grid.Column="1" Text="在这里放下" Margin="8,0,12,0" FontSize="12"
+                                           FontWeight="SemiBold" Foreground="#174E75" VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                        <Border x:Name="DropAfter" Height="56" Margin="3,0,3,2" Panel.ZIndex="2"
+                                VerticalAlignment="Bottom" Background="{StaticResource ProcessDropSurfaceBrush}"
+                                BorderBrush="#3C7FB1" BorderThickness="1" CornerRadius="2" Visibility="Collapsed">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="34" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.ColumnSpan="2" Margin="1" BorderBrush="#D9FFFFFF"
+                                        BorderThickness="1,1,1,0" CornerRadius="1" IsHitTestVisible="False" />
+                                <Border x:Name="DropAfterIcon" Grid.Column="0" Width="22" Height="22"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                                        Background="#66FFFFFF" BorderBrush="#8BB9D7" BorderThickness="1" CornerRadius="1">
+                                    <TextBlock x:Name="DropAfterArrow" Text="&#x25BC;" FontSize="11" Foreground="#185B8B"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <TextBlock x:Name="DropAfterText" Grid.Column="1" Text="在这里放下" Margin="8,0,12,0" FontSize="12"
+                                           FontWeight="SemiBold" Foreground="#174E75" VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                    </Grid>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="Tag" Value="DropTarget">
-                            <Setter TargetName="InsertionPlaceholder" Property="Padding" Value="0,14,0,0" />
-                            <Setter TargetName="InsertionPlaceholder" Property="Background" Value="{StaticResource IntermediateConnectionBrush}" />
+                        <Trigger Property="Tag" Value="DropTargetBefore">
+                            <Setter TargetName="DropBefore" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="Tag" Value="DropTargetAfter">
+                            <Setter TargetName="DropAfter" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="Tag" Value="DropTargetBeforeWarning">
+                            <Setter TargetName="DropBefore" Property="Visibility" Value="Visible" />
+                            <Setter TargetName="DropBefore" Property="Background" Value="{StaticResource ProcessDropWarningSurfaceBrush}" />
+                            <Setter TargetName="DropBefore" Property="BorderBrush" Value="#A86D12" />
+                            <Setter TargetName="DropBeforeIcon" Property="BorderBrush" Value="#C28A32" />
+                            <Setter TargetName="DropBeforeArrow" Property="Foreground" Value="#84510A" />
+                            <Setter TargetName="DropBeforeText" Property="Foreground" Value="#6D4308" />
+                        </Trigger>
+                        <Trigger Property="Tag" Value="DropTargetAfterWarning">
+                            <Setter TargetName="DropAfter" Property="Visibility" Value="Visible" />
+                            <Setter TargetName="DropAfter" Property="Background" Value="{StaticResource ProcessDropWarningSurfaceBrush}" />
+                            <Setter TargetName="DropAfter" Property="BorderBrush" Value="#A86D12" />
+                            <Setter TargetName="DropAfterIcon" Property="BorderBrush" Value="#C28A32" />
+                            <Setter TargetName="DropAfterArrow" Property="Foreground" Value="#84510A" />
+                            <Setter TargetName="DropAfterText" Property="Foreground" Value="#6D4308" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Descriptor.Definition.CanDelete}" Value="False">
+                <Setter Property="Cursor" Value="Arrow" />
+            </DataTrigger>
+        </Style.Triggers>
     </Style>
 
-    <DataTemplate DataType="{x:Type contracts:IImageProcess}">
-        <Grid Margin="5,0" Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-
-            <Grid Grid.Row="0" Height="22" ToolTip="{Binding IncomingConnectionMessage}">
-                <Border x:Name="ConnectionGlow" Width="86" Height="12" CornerRadius="4"
-                        HorizontalAlignment="Center" VerticalAlignment="Center"
-                        Background="{StaticResource IntermediateConnectionBrush}" Opacity="0.75">
-                    <Border.Effect>
-                        <DropShadowEffect Color="#7C69C7" BlurRadius="13" ShadowDepth="0" Opacity="0.8" />
-                    </Border.Effect>
-                </Border>
-                <Border x:Name="WarningOverlay" Height="4" Width="58" CornerRadius="2"
-                        HorizontalAlignment="Center" VerticalAlignment="Bottom"
-                        Background="{StaticResource WarningConnectionBrush}" Visibility="Collapsed" />
-                <TextBlock Text="{Binding IncomingConnectionLabel}" FontSize="9" Foreground="White"
-                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-            </Grid>
-
-            <Border x:Name="ProcessBlock" Grid.Row="1" MinHeight="78" Padding="10,8" CornerRadius="3"
-                    Background="{StaticResource ProcessSurfaceBrush}" BorderBrush="{StaticResource ProcessBorderBrush}"
-                    BorderThickness="1" ToolTip="{Binding Diagnostic}"
-                    Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+    <DataTemplate x:Key="ProcessItemTemplate">
+        <Border x:Name="ProcessBlock" MinHeight="60" Background="{StaticResource ProcessSurfaceBrush}"
+                BorderBrush="{StaticResource ProcessBorderBrush}" BorderThickness="0,0,0,1"
+                ToolTip="{Binding Diagnostic}"
+                Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
                 <Border.ContextMenu>
                     <ContextMenu>
                         <MenuItem Header="删除" Command="{Binding PlacementTarget.Tag.DeleteProcessCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
@@ -90,49 +159,94 @@
                         <MenuItem Header="粘贴参数" Command="{Binding PlacementTarget.Tag.PasteParametersCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                     </ContextMenu>
                 </Border.ContextMenu>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="38" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <Image Width="28" Height="28" VerticalAlignment="Top"
-                           Source="{Binding Descriptor.Definition.IconResourceKey, Converter={StaticResource ResourceLookupConverter}}" />
-                    <StackPanel Grid.Column="1">
-                        <TextBlock Text="{Binding Descriptor.Definition.NameResourceKey, Converter={StaticResource ResourceLookupConverter}}"
-                                   FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource ProcessTextBrush}" />
-                        <TextBlock Text="{Binding Summary}" Margin="0,3,4,0" TextWrapping="Wrap"
-                                   FontSize="11" Foreground="{StaticResource ProcessMutedTextBrush}" />
-                        <TextBlock Text="{Binding Descriptor.Definition.InputType, StringFormat=输入 {0}}" Margin="0,4,0,0"
-                                   FontSize="10" Foreground="{StaticResource ProcessMutedTextBrush}" />
-                        <TextBlock Text="{Binding Descriptor.Definition.OutputType, StringFormat=输出 {0}}"
-                                   FontSize="10" Foreground="{StaticResource ProcessMutedTextBrush}" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="2" HorizontalAlignment="Right">
-                        <Border x:Name="StateBadge" Padding="5,2" CornerRadius="2" Background="#DCE8F2">
-                            <TextBlock Text="{Binding State}" FontSize="9" Foreground="{StaticResource ProcessTextBrush}" />
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="4" />
+                    <ColumnDefinition Width="28" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="72" />
+                </Grid.ColumnDefinitions>
+
+                <Border x:Name="ConnectionLane" ToolTip="{Binding IncomingConnectionMessage}">
+                    <Border x:Name="ConnectionLine" Background="{StaticResource IntermediateConnectionBrush}" />
+                </Border>
+
+                <Border Grid.Column="1" Background="#EEF2F5" BorderBrush="#D2DADF" BorderThickness="0,0,1,0"
+                        ToolTip="按住整行即可拖动">
+                    <TextBlock Text="&#x2261;" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               FontSize="17" Foreground="#657684" />
+                </Border>
+
+                <Grid Grid.Column="2" Margin="6,4,7,4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Image Width="18" Height="18" Margin="0,0,5,0"
+                               Source="{Binding Descriptor.Definition.IconResourceKey, Converter={StaticResource ResourceLookupConverter}}" />
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Descriptor.Definition.NameResourceKey, Converter={StaticResource ResourceLookupConverter}}"
+                                   FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource ProcessTextBrush}"
+                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock Grid.Row="1" Text="{Binding Summary}" Margin="0,2,0,1" FontSize="10"
+                               Foreground="{StaticResource ProcessMutedTextBrush}" TextTrimming="CharacterEllipsis" />
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock FontSize="9" Foreground="#405467" TextTrimming="CharacterEllipsis">
+                            <TextBlock.Text>
+                                <MultiBinding StringFormat="{}{0}  &gt;  {1}">
+                                    <Binding Path="Descriptor.Definition.InputType" />
+                                    <Binding Path="Descriptor.Definition.OutputType" />
+                                </MultiBinding>
+                            </TextBlock.Text>
+                        </TextBlock>
+                        <Border x:Name="ConnectionLabel" Grid.Column="1" Margin="6,0,0,0" Padding="4,0"
+                                Background="#EEF0F5" BorderBrush="#B8B2D5" BorderThickness="1">
+                            <TextBlock Text="{Binding IncomingConnectionLabel}" FontSize="9" Foreground="#544A7A" />
                         </Border>
-                        <TextBlock x:Name="OverrideBadge" Text="手动" Margin="0,5,0,0" HorizontalAlignment="Center"
-                                   FontSize="9" Foreground="#9A4E08" Visibility="Collapsed" />
-                    </StackPanel>
+                    </Grid>
                 </Grid>
-            </Border>
-        </Grid>
+
+                <Border Grid.Column="3" Background="#F2F4F6" BorderBrush="#D2DADF" BorderThickness="1,0,0,0">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Border x:Name="StateBadge" Padding="4,1" Background="#DCE8F2" BorderBrush="#AFC2D1" BorderThickness="1">
+                            <TextBlock Text="{Binding State}" FontSize="9" Foreground="{StaticResource ProcessTextBrush}"
+                                       TextTrimming="CharacterEllipsis" MaxWidth="58" />
+                        </Border>
+                        <TextBlock x:Name="OverrideBadge" Text="手动" Margin="0,3,0,0" HorizontalAlignment="Center"
+                                   FontSize="9" Foreground="#9A4E08" Visibility="Collapsed" />
+                        <TextBlock x:Name="WarningOverlay" Text="! 检查" Margin="0,3,0,0" HorizontalAlignment="Center"
+                                   FontSize="9" FontWeight="Bold" Foreground="#A9580B" Visibility="Collapsed" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
         <DataTemplate.Triggers>
             <DataTrigger Binding="{Binding Descriptor.Definition.InputType}" Value="RawImage">
-                <Setter TargetName="ConnectionGlow" Property="Background" Value="{StaticResource RawConnectionBrush}" />
-                <Setter TargetName="ConnectionGlow" Property="Effect">
-                    <Setter.Value><DropShadowEffect Color="#22AFC7" BlurRadius="13" ShadowDepth="0" Opacity="0.8" /></Setter.Value>
-                </Setter>
+                <Setter TargetName="ConnectionLine" Property="Background" Value="{StaticResource RawConnectionBrush}" />
+                <Setter TargetName="ConnectionLabel" Property="BorderBrush" Value="#73C5D3" />
+                <Setter TargetName="ConnectionLabel" Property="Background" Value="#E9F8FA" />
             </DataTrigger>
             <DataTrigger Binding="{Binding IncomingConnectionSeverity}" Value="None">
-                <Setter TargetName="ConnectionGlow" Property="Visibility" Value="Collapsed" />
+                <Setter TargetName="ConnectionLane" Property="Visibility" Value="Collapsed" />
+                <Setter TargetName="ConnectionLabel" Property="Visibility" Value="Collapsed" />
             </DataTrigger>
             <DataTrigger Binding="{Binding IncomingConnectionSeverity}" Value="SemanticWarning">
                 <Setter TargetName="WarningOverlay" Property="Visibility" Value="Visible" />
             </DataTrigger>
             <DataTrigger Binding="{Binding IncomingConnectionSeverity}" Value="HardError">
-                <Setter TargetName="ConnectionGlow" Property="Background" Value="{StaticResource ErrorConnectionBrush}" />
+                <Setter TargetName="ConnectionLine" Property="Background" Value="{StaticResource ErrorConnectionBrush}" />
+                <Setter TargetName="ConnectionLabel" Property="BorderBrush" Value="{StaticResource ErrorConnectionBrush}" />
                 <Setter TargetName="ProcessBlock" Property="BorderBrush" Value="{StaticResource ErrorConnectionBrush}" />
             </DataTrigger>
             <DataTrigger Binding="{Binding HasUserOverrides}" Value="True">
@@ -142,10 +256,12 @@
                 <Setter TargetName="ProcessBlock" Property="Background" Value="{StaticResource ProcessDisabledBrush}" />
                 <Setter TargetName="ProcessBlock" Property="Opacity" Value="0.68" />
             </DataTrigger>
+            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                <Setter TargetName="ProcessBlock" Property="BorderBrush" Value="#6EA6D1" />
+            </DataTrigger>
             <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
                 <Setter TargetName="ProcessBlock" Property="Background" Value="{StaticResource ProcessSelectedBrush}" />
                 <Setter TargetName="ProcessBlock" Property="BorderBrush" Value="#2B79B8" />
-                <Setter TargetName="ProcessBlock" Property="BorderThickness" Value="2" />
             </DataTrigger>
         </DataTemplate.Triggers>
     </DataTemplate>

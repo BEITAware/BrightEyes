@@ -24,6 +24,8 @@ public sealed class PipelineChangedEventArgs : EventArgs
 
 public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
 {
+    public const bool AllowIncompatiblePlacements = true;
+
     private readonly ProcessRegistry _registry;
     private DisplayColorMetadata _displayMetadata;
     private IImageProcess? _selectedProcess;
@@ -90,9 +92,12 @@ public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
 
     public IImageProcess Insert(ProcessDescriptor descriptor, int index, bool recordUndo = true)
     {
-        if (!descriptor.Definition.AllowMultiple && Processes.Any(process => process.Descriptor.Definition.StableId == descriptor.Definition.StableId))
+        bool allowsAnotherInstance = descriptor.Definition.AllowMultiple ||
+                                     !Processes.Any(process => process.Descriptor.Definition.StableId == descriptor.Definition.StableId);
+        if (!(allowsAnotherInstance || AllowIncompatiblePlacements))
             throw new InvalidOperationException($"过程 {descriptor.Definition.StableId} 不允许多个实例。");
-        if (!CanInsert(descriptor, index, out string reason))
+        bool compatible = CanInsert(descriptor, index, out string reason);
+        if (!(compatible || AllowIncompatiblePlacements))
             throw new InvalidOperationException(reason);
 
         IImageProcess process = descriptor.Create();
@@ -127,9 +132,11 @@ public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
     {
         int oldIndex = Processes.IndexOf(process);
         if (oldIndex < 0 || oldIndex == targetIndex) return false;
-        if (process.Descriptor.Definition.StableId == BuiltInProcessIds.ImageSource) return false;
+        bool movable = process.Descriptor.Definition.StableId != BuiltInProcessIds.ImageSource;
+        if (!(movable || AllowIncompatiblePlacements)) return false;
         int adjustedTarget = targetIndex > oldIndex ? targetIndex - 1 : targetIndex;
-        if (!CanMoveAtRemainingIndex(process, adjustedTarget, out _)) return false;
+        bool compatible = CanMoveAtRemainingIndex(process, adjustedTarget, out _);
+        if (!(compatible || AllowIncompatiblePlacements)) return false;
         MoveExisting(process, adjustedTarget);
         if (recordUndo)
         {
@@ -159,6 +166,11 @@ public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
     public bool CanInsert(ProcessDescriptor descriptor, int index, out string reason)
     {
         index = Math.Clamp(index, 0, Processes.Count);
+        if (!descriptor.Definition.AllowMultiple && Processes.Any(process => process.Descriptor.Definition.StableId == descriptor.Definition.StableId))
+        {
+            reason = $"过程 {descriptor.Definition.StableId} 不允许多个实例。";
+            return false;
+        }
         if (descriptor.Definition.InputType == ProcessDataType.None && index != 0)
         {
             reason = "无输入过程只能位于流程首位。";
@@ -294,7 +306,9 @@ public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
 
     public void RestorePipeline(IReadOnlyList<IImageProcess> restoredProcesses)
     {
-        if (restoredProcesses.Count == 0 || restoredProcesses[0].Descriptor.Definition.StableId != BuiltInProcessIds.ImageSource)
+        bool beginsWithImageSource = restoredProcesses.Count > 0 &&
+                                     restoredProcesses[0].Descriptor.Definition.StableId == BuiltInProcessIds.ImageSource;
+        if (!(beginsWithImageSource || AllowIncompatiblePlacements))
             throw new InvalidDataException("保存的流程必须以图像源开始。");
         foreach (IImageProcess process in Processes) Unsubscribe(process);
         Processes.Clear();

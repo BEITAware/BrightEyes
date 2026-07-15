@@ -1,6 +1,5 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:r="clr-namespace:System.Windows.Controls.Ribbon;assembly=System.Windows.Controls.Ribbon">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- Aero Brushes -->
     <LinearGradientBrush x:Key="AeroBlueGradientBrush" StartPoint="0,0" EndPoint="0,1">
@@ -15,6 +14,41 @@
     <SolidColorBrush x:Key="AeroDisabledBackgroundBrush" Color="#F0F0F0"/>
     <SolidColorBrush x:Key="AeroTextBrush" Color="#1E395B"/>
     <SolidColorBrush x:Key="AeroDisabledTextBrush" Color="#888888"/>
+
+    <!-- Bureau-style neutral chrome. Blue is reserved for selection and active actions. -->
+    <LinearGradientBrush x:Key="BureauHeaderBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FEFEFE" Offset="0"/>
+        <GradientStop Color="#F8F8F8" Offset="0.38"/>
+        <GradientStop Color="#ECEDEF" Offset="0.48"/>
+        <GradientStop Color="#DEE0E2" Offset="0.52"/>
+        <GradientStop Color="#CED2D5" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="BureauStatusBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FAFAFA" Offset="0"/>
+        <GradientStop Color="#E9EAEB" Offset="0.5"/>
+        <GradientStop Color="#D7DADD" Offset="1"/>
+    </LinearGradientBrush>
+    <DrawingBrush x:Key="BureauHeaderTextureBrush" TileMode="Tile"
+                  Viewport="0,0,4,4" ViewportUnits="Absolute"
+                  Viewbox="0,0,4,4" ViewboxUnits="Absolute">
+        <DrawingBrush.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#18FFFFFF">
+                    <GeometryDrawing.Geometry>
+                        <RectangleGeometry Rect="0,0,4,1"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+                <GeometryDrawing Brush="#08000000">
+                    <GeometryDrawing.Geometry>
+                        <RectangleGeometry Rect="0,3,4,1"/>
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingBrush.Drawing>
+    </DrawingBrush>
+    <SolidColorBrush x:Key="BureauHeaderBorderBrush" Color="#8E969D"/>
+    <SolidColorBrush x:Key="BureauHeaderSeparatorBrush" Color="#B2B7BC"/>
+    <SolidColorBrush x:Key="BureauHeaderTextBrush" Color="#2E3338"/>
 
     <!-- Button Brushes -->
     <LinearGradientBrush x:Key="AeroButtonNormalBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
@@ -46,18 +80,6 @@
         <GradientStop Color="#FFFFFF" Offset="0.0" />
         <GradientStop Color="Transparent" Offset="1.0" />
     </LinearGradientBrush>
-
-    <!-- Ribbon Style -->
-    <Style TargetType="{x:Type r:Ribbon}">
-        <Setter Property="Background" Value="{StaticResource AeroBlueGradientBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource AeroBorderBrush}"/>
-        <Setter Property="BorderThickness" Value="0,0,0,1"/>
-        <Setter Property="SnapsToDevicePixels" Value="True"/>
-    </Style>
-
-    <!-- Removed custom RibbonTab ControlTemplate to preserve default behavior and visibility -->
-    
-    <!-- Use default RibbonGroup and RibbonButton templates to ensure proper item layout -->
 
     <!-- GroupBox Style -->
     <Style TargetType="{x:Type GroupBox}">

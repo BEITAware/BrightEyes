@@ -49,6 +49,9 @@ namespace BrightEyes.Renderer
         // Tracks current content size for aspect-correct viewport
         private int _sourceWidth;
         private int _sourceHeight;
+        private float _viewZoom = 1.0f;
+        private float _viewPanX;
+        private float _viewPanY;
 
         // Background colors for SDR and HDR outputs
         // SDR default: very light low-saturation blue near SDR paper white (#F8FAFE)
@@ -544,6 +547,58 @@ namespace BrightEyes.Renderer
             }
         }
 
+        public float ZoomView(float factor, int anchorX = -1, int anchorY = -1)
+        {
+            lock (_lockObject)
+            {
+                GetFitViewport(out float fitWidth, out float fitHeight);
+                float maximumZoom = Math.Max(0.125f, Math.Min(8.0f, 32767.0f / Math.Max(fitWidth, fitHeight)));
+                float newZoom = Math.Clamp(_viewZoom * factor, 0.125f, maximumZoom);
+                if (Math.Abs(newZoom - _viewZoom) < 0.0001f) return _viewZoom;
+
+                float oldWidth = fitWidth * _viewZoom;
+                float oldHeight = fitHeight * _viewZoom;
+                float oldLeft = (_width - oldWidth) * 0.5f + _viewPanX;
+                float oldTop = (_height - oldHeight) * 0.5f + _viewPanY;
+                float anchorPositionX = anchorX >= 0 ? anchorX : _width * 0.5f;
+                float anchorPositionY = anchorY >= 0 ? anchorY : _height * 0.5f;
+                float sourceX = oldWidth > 0.0f ? (anchorPositionX - oldLeft) / oldWidth : 0.5f;
+                float sourceY = oldHeight > 0.0f ? (anchorPositionY - oldTop) / oldHeight : 0.5f;
+
+                _viewZoom = newZoom;
+                float newWidth = fitWidth * newZoom;
+                float newHeight = fitHeight * newZoom;
+                _viewPanX = anchorPositionX - sourceX * newWidth - (_width - newWidth) * 0.5f;
+                _viewPanY = anchorPositionY - sourceY * newHeight - (_height - newHeight) * 0.5f;
+                ClampViewPan(fitWidth, fitHeight);
+                UpdateViewport();
+                return _viewZoom;
+            }
+        }
+
+        public void PanView(float horizontalPixels, float verticalPixels)
+        {
+            lock (_lockObject)
+            {
+                GetFitViewport(out float fitWidth, out float fitHeight);
+                _viewPanX += horizontalPixels;
+                _viewPanY += verticalPixels;
+                ClampViewPan(fitWidth, fitHeight);
+                UpdateViewport();
+            }
+        }
+
+        public void ResetView()
+        {
+            lock (_lockObject)
+            {
+                _viewZoom = 1.0f;
+                _viewPanX = 0.0f;
+                _viewPanY = 0.0f;
+                UpdateViewport();
+            }
+        }
+
         /// <summary>
         /// Creates a GPU texture from CPU-side RGBA32F data and sets it as the external source.
         /// </summary>
@@ -731,36 +786,42 @@ namespace BrightEyes.Renderer
                 return;
             }
 
-            int contentW = _sourceWidth > 0 ? _sourceWidth : _width;
-            int contentH = _sourceHeight > 0 ? _sourceHeight : _height;
-
-            float contentAspect = (float)contentW / Math.Max(1, contentH);
-            float targetAspect = (float)_width / Math.Max(1, _height);
-
-            float vpWidth;
-            float vpHeight;
-            float vpX;
-            float vpY;
-
-            if (contentAspect > targetAspect)
-            {
-                // Wider than area: pillarbox
-                vpWidth = _width;
-                vpHeight = _width / contentAspect;
-                vpX = 0.0f;
-                vpY = (_height - vpHeight) * 0.5f;
-            }
-            else
-            {
-                // Taller than area: letterbox
-                vpHeight = _height;
-                vpWidth = _height * contentAspect;
-                vpY = 0.0f;
-                vpX = (_width - vpWidth) * 0.5f;
-            }
+            GetFitViewport(out float fitWidth, out float fitHeight);
+            ClampViewPan(fitWidth, fitHeight);
+            float vpWidth = fitWidth * _viewZoom;
+            float vpHeight = fitHeight * _viewZoom;
+            float vpX = (_width - vpWidth) * 0.5f + _viewPanX;
+            float vpY = (_height - vpHeight) * 0.5f + _viewPanY;
 
             var viewport = new Viewport(vpX, vpY, vpWidth, vpHeight, 0.0f, 1.0f);
             _deviceContext.RSSetViewport(viewport);
+        }
+
+        private void GetFitViewport(out float width, out float height)
+        {
+            int contentWidth = _sourceWidth > 0 ? _sourceWidth : _width;
+            int contentHeight = _sourceHeight > 0 ? _sourceHeight : _height;
+            float contentAspect = (float)contentWidth / Math.Max(1, contentHeight);
+            float targetAspect = (float)_width / Math.Max(1, _height);
+            if (contentAspect > targetAspect)
+            {
+                width = _width;
+                height = _width / contentAspect;
+            }
+            else
+            {
+                height = _height;
+                width = _height * contentAspect;
+            }
+        }
+
+        private void ClampViewPan(float fitWidth, float fitHeight)
+        {
+            // Let the displayed w x h image move across a centered 3w x 3h canvas.
+            float horizontalRange = fitWidth * _viewZoom;
+            float verticalRange = fitHeight * _viewZoom;
+            _viewPanX = Math.Clamp(_viewPanX, -horizontalRange, horizontalRange);
+            _viewPanY = Math.Clamp(_viewPanY, -verticalRange, verticalRange);
         }
 
         /// <summary>

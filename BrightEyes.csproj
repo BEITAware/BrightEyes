@@ -12,10 +12,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Reference Include="System.Windows.Controls.Ribbon" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="Starward.Codec" Version="0.2.1" />
     <PackageReference Include="PhotoSauce.MagicScaler" Version="0.15.0" />
     <PackageReference Include="PhotoSauce.NativeCodecs.Giflib" Version="5.2.2-preview3" />

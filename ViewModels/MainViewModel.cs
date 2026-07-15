@@ -33,6 +33,7 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
     private bool _isBusy;
     private string _statusText = "打开图像以生成过程。";
     private string _inspectorText = "来源元数据将在预读后显示。";
+    private float _viewZoom = 1.0f;
 
     public MainViewModel()
     {
@@ -65,10 +66,14 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
         PasteParametersCommand = new RelayCommand(PasteParameters, parameter => parameter is IImageProcess);
         InspectInputCommand = new RelayCommand(parameter => InspectConnection(parameter as IImageProcess, true));
         InspectOutputCommand = new RelayCommand(parameter => InspectConnection(parameter as IImageProcess, false));
+        ZoomInCommand = new RelayCommand(_ => ChangeViewZoom(1.2f), _ => IsRendererReady);
+        ZoomOutCommand = new RelayCommand(_ => ChangeViewZoom(1.0f / 1.2f), _ => IsRendererReady);
+        ResetZoomCommand = new RelayCommand(_ => ResetView(), _ => IsRendererReady);
         WindowClosingCommand = new RelayCommand(_ => Dispose());
 
         InitializeRendererAction = InitializeRenderer;
         ResizeRendererAction = (width, height) => _renderer?.Resize(width, height);
+        PreviewMouseWheelAction = HandlePreviewMouseWheel;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -81,6 +86,7 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
     public IReadOnlyList<ProcessRibbonGroupViewModel> ProcessRibbonGroups { get; }
     public Func<IntPtr, int, int, bool> InitializeRendererAction { get; }
     public Action<int, int> ResizeRendererAction { get; }
+    public Action<int, int, int, bool, bool> PreviewMouseWheelAction { get; }
     public ICommand WindowClosingCommand { get; }
     public ICommand OpenImageCommand { get; }
     public ICommand SavePipelineCommand { get; }
@@ -95,6 +101,11 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
     public ICommand PasteParametersCommand { get; }
     public ICommand InspectInputCommand { get; }
     public ICommand InspectOutputCommand { get; }
+    public ICommand ZoomInCommand { get; }
+    public ICommand ZoomOutCommand { get; }
+    public ICommand ResetZoomCommand { get; }
+
+    public string ViewZoomText => $"{_viewZoom * 100.0f:0}%";
 
     public ImageDocument? ActiveDocument
     {
@@ -105,6 +116,7 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
             if (_activeDocument is not null)
                 _activeDocument.PipelineChanged -= OnPipelineChanged;
             _activeDocument = value;
+            ResetView();
             if (_activeDocument is not null)
             {
                 _activeDocument.PipelineChanged += OnPipelineChanged;
@@ -184,7 +196,8 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
             reason = "没有活动文档。";
             return false;
         }
-        if (!ActiveDocument.CanInsert(descriptor, index, out reason)) return false;
+        bool compatible = ActiveDocument.CanInsert(descriptor, index, out reason);
+        if (!(compatible || ImageDocument.AllowIncompatiblePlacements)) return false;
         SelectedProcess = ActiveDocument.Insert(descriptor, index);
         RefreshCommandState();
         return true;
@@ -197,7 +210,8 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
             reason = "没有活动文档。";
             return false;
         }
-        if (!ActiveDocument.CanMove(process, index, out reason)) return false;
+        bool compatible = ActiveDocument.CanMove(process, index, out reason);
+        if (!(compatible || ImageDocument.AllowIncompatiblePlacements)) return false;
         bool moved = ActiveDocument.Move(process, index);
         RefreshCommandState();
         return moved;
@@ -482,6 +496,42 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
         ? "此硬类型没有图像语义。"
         : $"{semantics.Primaries} / {semantics.Transfer} / {semantics.PhotometricModel}\n" +
           $"reference white {semantics.ReferenceWhiteNits:0.##} nit / peak {semantics.NominalPeakNits:0.##} nit / {semantics.Range} / {semantics.Alpha}";
+
+    private void HandlePreviewMouseWheel(int delta, int x, int y, bool control, bool shift)
+    {
+        if (_renderer is null || delta == 0) return;
+        float wheelSteps = delta / 120.0f;
+        if (control)
+        {
+            _renderer.PanView(0.0f, 48.0f * wheelSteps);
+        }
+        else if (shift)
+        {
+            _renderer.PanView(48.0f * wheelSteps, 0.0f);
+        }
+        else
+        {
+            SetViewZoom(_renderer.ZoomView(MathF.Pow(1.2f, wheelSteps), x, y));
+        }
+    }
+
+    private void ChangeViewZoom(float factor)
+    {
+        if (_renderer is not null) SetViewZoom(_renderer.ZoomView(factor));
+    }
+
+    private void ResetView()
+    {
+        _renderer?.ResetView();
+        SetViewZoom(1.0f);
+    }
+
+    private void SetViewZoom(float value)
+    {
+        if (Math.Abs(_viewZoom - value) < 0.0001f) return;
+        _viewZoom = value;
+        OnPropertyChanged(nameof(ViewZoomText));
+    }
 
     private static void RefreshCommandState() => CommandManager.InvalidateRequerySuggested();
 
