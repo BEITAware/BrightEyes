@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using Vortice.Direct3D11;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
+using BrightEyes.Processing.BuiltIn;
 
 namespace BrightEyes.Renderer;
 
@@ -27,6 +28,9 @@ public sealed class ColorManagementEffect : IDisposable
     private DisplayColorMetadata _constantDisplay;
     private Vector4 _constantSdrBackground;
     private Vector4 _constantHdrBackground;
+    private ToneMappingMode _constantToneMapping;
+    private GamutMappingMode _constantGamutMapping;
+    private bool _constantApplyHlgOotf;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct ColorConstants
@@ -35,6 +39,7 @@ public sealed class ColorManagementEffect : IDisposable
         public Vector2 SourceTexelSize;
         public Vector4 SourceParameters;
         public Vector4 OutputParameters;
+        public Vector4 MappingParameters;
         public Vector4 SdrBackground;
         public Vector4 HdrBackground;
     }
@@ -74,15 +79,18 @@ public sealed class ColorManagementEffect : IDisposable
         DisplayColorMetadata display,
         float sdrReferenceWhiteNits,
         float sdrDisplayPeakNits,
+        ToneMappingMode toneMapping,
+        GamutMappingMode gamutMapping,
+        bool applyHlgOotf,
         Vector4 sdrBackground,
         Vector4 hdrBackground)
     {
         sourceMetadata = sourceMetadata.Normalize();
-        sdrReferenceWhiteNits = NormalizePositive(sdrReferenceWhiteNits, 100.0f);
-        sdrDisplayPeakNits = NormalizePositive(sdrDisplayPeakNits, 100.0f);
-        float effectiveSdrWhiteNits = display.IsHdr
+        float defaultSdrWhiteNits = display.IsHdr
             ? NormalizePositive(display.SdrWhiteLevelNits, 203.0f)
-            : sdrReferenceWhiteNits;
+            : 100.0f;
+        sdrReferenceWhiteNits = NormalizePositive(sdrReferenceWhiteNits, defaultSdrWhiteNits);
+        sdrDisplayPeakNits = NormalizePositive(sdrDisplayPeakNits, 100.0f);
         context.OMSetRenderTargets(destination);
         context.VSSetShader(_vertexShader);
         context.PSSetShader(_pixelShader);
@@ -94,6 +102,9 @@ public sealed class ColorManagementEffect : IDisposable
                        _constantSdrWhite != sdrReferenceWhiteNits ||
                        _constantSdrPeak != sdrDisplayPeakNits ||
                        !_constantDisplay.Equals(display) ||
+                       _constantToneMapping != toneMapping ||
+                       _constantGamutMapping != gamutMapping ||
+                       _constantApplyHlgOotf != applyHlgOotf ||
                        _constantSdrBackground != sdrBackground ||
                        _constantHdrBackground != hdrBackground;
         if (changed)
@@ -112,8 +123,13 @@ public sealed class ColorManagementEffect : IDisposable
                 OutputParameters = new Vector4(
                     display.IsHdr ? 1.0f : 0.0f,
                     NormalizePositive(display.IsHdr ? display.EffectivePeakNits : sdrDisplayPeakNits, 1000.0f),
-                    effectiveSdrWhiteNits,
+                    sdrReferenceWhiteNits,
                     sdrDisplayPeakNits),
+                MappingParameters = new Vector4(
+                    sourceMetadata.NominalPeakNits,
+                    (float)toneMapping,
+                    (float)gamutMapping,
+                    applyHlgOotf ? 1.0f : 0.0f),
                 SdrBackground = sdrBackground,
                 HdrBackground = hdrBackground
             };
@@ -126,6 +142,9 @@ public sealed class ColorManagementEffect : IDisposable
             _constantSdrWhite = sdrReferenceWhiteNits;
             _constantSdrPeak = sdrDisplayPeakNits;
             _constantDisplay = display;
+            _constantToneMapping = toneMapping;
+            _constantGamutMapping = gamutMapping;
+            _constantApplyHlgOotf = applyHlgOotf;
             _constantSdrBackground = sdrBackground;
             _constantHdrBackground = hdrBackground;
         }

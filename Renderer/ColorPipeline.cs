@@ -79,8 +79,8 @@ public readonly record struct ColorSourceMetadata(
 }
 
 /// <summary>
-/// Display facts obtained from DXGI. SDR calibration values are deliberately
-/// separate because they are user supplied and are disabled for HDR output.
+/// Display facts obtained from DXGI. The system SDR white level supplies the
+/// default reference white and can be overridden by the render mapper.
 /// </summary>
 public readonly record struct DisplayColorMetadata(
     bool IsHdr,

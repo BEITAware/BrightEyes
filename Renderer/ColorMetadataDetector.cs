@@ -4,7 +4,7 @@ namespace BrightEyes.Renderer;
 
 /// <summary>
 /// Reads the compact CICP/nclx signalling used by PNG, AVIF and HEIF. ICC
-/// profiles are still handed to WIC/PhotoSauce for normal SDR conversion; the
+/// profiles are still handed to PhotoSauce for normal SDR conversion; the
 /// detector only claims a transfer when the container explicitly identifies a
 /// PQ or HLG stream.
 /// </summary>

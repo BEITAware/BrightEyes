@@ -9,6 +9,8 @@ cbuffer ColorConstants : register(b0)
     float4 SourceParameters;
     // hdr output, hdr peak, SDR reference white, SDR display peak
     float4 OutputParameters;
+    // source peak, tone mapper, gamut mapper, apply HLG OOTF
+    float4 MappingParameters;
     float4 SdrBackground;
     float4 HdrBackground;
 };
@@ -23,7 +25,6 @@ static const float PI = 3.14159265358979323846;
 
 float SrgbToLinear(float value)
 {
-    value = saturate(value);
     return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4);
 }
 
@@ -94,40 +95,36 @@ float3 Rec2020ToRec709(float3 c)
 float3 DecodeTransfer(float3 encoded)
 {
     float transfer = SourceParameters.x;
-    float referenceWhite = max(transfer < 0.5 ? OutputParameters.z : SourceParameters.w, 0.001);
+    float referenceWhite = max(SourceParameters.w, 0.001);
     if (transfer < 0.5)
         return float3(SrgbToLinear(encoded.r), SrgbToLinear(encoded.g), SrgbToLinear(encoded.b)) * referenceWhite;
     if (transfer < 1.5)
         return float3(PqToNits(encoded.r), PqToNits(encoded.g), PqToNits(encoded.b));
     if (transfer < 2.5)
     {
-        // BT.2100 HLG inverse OETF followed by the display-referred OOTF.
+        // BT.2100 HLG inverse OETF. The display-dependent OOTF belongs to the
+        // render mapper and is applied after scene-linear filtering.
         float3 e = max(encoded, 0.0);
-        float3 scene = float3(
+        return float3(
             e.r <= 0.5 ? e.r * e.r / 3.0 : (exp((e.r - 0.5599107) / 0.1788328) + 0.2846689) / 12.0,
             e.g <= 0.5 ? e.g * e.g / 3.0 : (exp((e.g - 0.5599107) / 0.1788328) + 0.2846689) / 12.0,
             e.b <= 0.5 ? e.b * e.b / 3.0 : (exp((e.b - 0.5599107) / 0.1788328) + 0.2846689) / 12.0);
-        float y = dot(scene, float3(0.2627, 0.6780, 0.0593));
-        float displayPeak = max(OutputParameters.y, 1000.0);
-        float gamma = 1.2 + 0.42 * log10(displayPeak / 1000.0);
-        float ootf = pow(max(y, 1e-6), gamma - 1.0);
-        return scene * ootf * displayPeak;
     }
     if (transfer < 3.5)
         return max(encoded, 0.0) * referenceWhite;
     return pow(max(encoded, 0.0), 2.2) * referenceWhite;
 }
 
-float3 ToRec2020(float3 linearColor)
+float3 ToLinearRec709(float3 linearColor)
 {
     float primaries = SourceParameters.y;
-    if (primaries < 0.5) return Rec709ToRec2020(linearColor);
-    if (primaries < 1.5) return DisplayP3ToRec2020(linearColor);
-    if (primaries < 2.5) return linearColor;
-    return ProPhotoToRec2020(linearColor);
+    if (primaries < 0.5) return linearColor;
+    if (primaries < 1.5) return Rec2020ToRec709(DisplayP3ToRec2020(linearColor));
+    if (primaries < 2.5) return Rec2020ToRec709(linearColor);
+    return Rec2020ToRec709(ProPhotoToRec2020(linearColor));
 }
 
-float4 DecodeAndComposite(int2 coordinate)
+float4 DecodeToPremultipliedLinear709(int2 coordinate)
 {
     coordinate = clamp(coordinate, int2(0, 0), int2(SourceSize) - 1);
     float4 encoded = SourceTexture.Load(int3(coordinate, 0));
@@ -135,14 +132,8 @@ float4 DecodeAndComposite(int2 coordinate)
     float3 color = encoded.rgb;
     if (SourceParameters.z > 0.5 && SourceParameters.z < 1.5 && alpha > 1e-6)
         color /= alpha;
-    float3 linearColor = ToRec2020(DecodeTransfer(color));
-    // Premultiply in linear light before interpolation and composite with the
-    // exact blue clear color used by the existing terminal renderer.
-    bool hdr = OutputParameters.x > 0.5;
-    float3 background = hdr
-        ? float3(PqToNits(HdrBackground.r), PqToNits(HdrBackground.g), PqToNits(HdrBackground.b))
-        : Rec709ToRec2020(float3(SrgbToLinear(SdrBackground.r), SrgbToLinear(SdrBackground.g), SrgbToLinear(SdrBackground.b)) * OutputParameters.w);
-    return float4(linearColor * alpha + background * (1.0 - alpha), 1.0);
+    float3 linearColor = ToLinearRec709(DecodeTransfer(color));
+    return float4(linearColor * alpha, alpha);
 }
 
 float4 SampleLinearLight(float2 uv)
@@ -150,22 +141,91 @@ float4 SampleLinearLight(float2 uv)
     float2 position = uv * SourceSize - 0.5;
     int2 base = int2(floor(position));
     float2 fraction = position - floor(position);
-    float4 a = lerp(DecodeAndComposite(base), DecodeAndComposite(base + int2(1, 0)), fraction.x);
-    float4 b = lerp(DecodeAndComposite(base + int2(0, 1)), DecodeAndComposite(base + int2(1, 1)), fraction.x);
+    float4 a = lerp(DecodeToPremultipliedLinear709(base), DecodeToPremultipliedLinear709(base + int2(1, 0)), fraction.x);
+    float4 b = lerp(DecodeToPremultipliedLinear709(base + int2(0, 1)), DecodeToPremultipliedLinear709(base + int2(1, 1)), fraction.x);
     return lerp(a, b, fraction.y);
 }
 
-float4 EncodeOutput(float3 linear2020)
+float3 ToneMapLuminance(float3 color, float targetPeak)
+{
+    if (MappingParameters.y > 0.5) return color;
+    float luminance = dot(color, float3(0.2126, 0.7152, 0.0722));
+    if (luminance <= 0.0) return color;
+    float sourcePeak = max(MappingParameters.x, luminance);
+    if (sourcePeak <= targetPeak && luminance <= targetPeak) return color;
+    float knee = targetPeak * 0.72;
+    if (luminance <= knee) return color;
+    float shoulder = max(targetPeak - knee, 0.001);
+    float mapped = knee + shoulder * (1.0 - exp(-(luminance - knee) / shoulder));
+    return color * (mapped / luminance);
+}
+
+float3 CompressGamut(float3 color, float limit)
+{
+    if (MappingParameters.z > 0.5) return color;
+    float luminance = dot(color, float3(0.2126, 0.7152, 0.0722));
+    float3 chroma = color - luminance;
+    float scale = 1.0;
+    [unroll]
+    for (int channel = 0; channel < 3; channel++)
+    {
+        if (color[channel] < 0.0 && chroma[channel] < 0.0)
+            scale = min(scale, max(luminance, 0.0) / -chroma[channel]);
+        if (color[channel] > limit && chroma[channel] > 0.0)
+            scale = min(scale, max(limit - luminance, 0.0) / chroma[channel]);
+    }
+    // Smooth the boundary to avoid a hard per-channel clip.
+    scale = saturate(scale);
+    scale = scale * scale * (3.0 - 2.0 * scale);
+    return luminance + chroma * scale;
+}
+
+float3 ApplyRenderMapper(float3 linear709)
+{
+    float sourceTransfer = SourceParameters.x;
+    float targetPeak = max(OutputParameters.y, 1.0);
+    if (sourceTransfer > 1.5 && sourceTransfer < 2.5 && MappingParameters.w > 0.5)
+    {
+        float sceneLuminance = dot(max(linear709, 0.0), float3(0.2126, 0.7152, 0.0722));
+        float gamma = 1.2 + 0.42 * log10(max(targetPeak, 1000.0) / 1000.0);
+        linear709 *= pow(max(sceneLuminance, 1e-6), gamma - 1.0) * targetPeak;
+    }
+    else if (sourceTransfer < 0.5 || sourceTransfer > 2.5)
+    {
+        linear709 *= OutputParameters.z / max(SourceParameters.w, 0.001);
+    }
+    return ToneMapLuminance(linear709, targetPeak);
+}
+
+float3 BackgroundLinear709()
 {
     if (OutputParameters.x > 0.5)
-        return float4(NitsToPq(linear2020.r), NitsToPq(linear2020.g), NitsToPq(linear2020.b), 1.0);
+    {
+        float3 rec2020Nits = float3(PqToNits(HdrBackground.r), PqToNits(HdrBackground.g), PqToNits(HdrBackground.b));
+        return Rec2020ToRec709(rec2020Nits);
+    }
+    return float3(SrgbToLinear(SdrBackground.r), SrgbToLinear(SdrBackground.g), SrgbToLinear(SdrBackground.b)) * OutputParameters.w;
+}
 
-    float3 rec709Nits = max(Rec2020ToRec709(linear2020), 0.0);
-    float3 normalized = rec709Nits / max(OutputParameters.w, 0.001);
+float4 EncodeOutput(float3 linear709)
+{
+    if (OutputParameters.x > 0.5)
+    {
+        float3 linear2020 = CompressGamut(Rec709ToRec2020(linear709), OutputParameters.y);
+        return float4(NitsToPq(linear2020.r), NitsToPq(linear2020.g), NitsToPq(linear2020.b), 1.0);
+    }
+
+    float3 mapped709 = CompressGamut(linear709, OutputParameters.w);
+    float3 normalized = mapped709 / max(OutputParameters.w, 0.001);
     return float4(LinearToSrgb(saturate(normalized.r)), LinearToSrgb(saturate(normalized.g)), LinearToSrgb(saturate(normalized.b)), 1.0);
 }
 
 float4 main(PS_INPUT input) : SV_TARGET
 {
-    return EncodeOutput(SampleLinearLight(input.TexCoord).rgb);
+    float4 sample = SampleLinearLight(input.TexCoord);
+    float alpha = saturate(sample.a);
+    float3 straight = alpha > 1e-6 ? sample.rgb / alpha : 0.0;
+    float3 mapped = ApplyRenderMapper(straight);
+    float3 composited = mapped * alpha + BackgroundLinear709() * (1.0 - alpha);
+    return EncodeOutput(composited);
 }

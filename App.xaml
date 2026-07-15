@@ -8,6 +8,7 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Resources/Localization/Strings.zh-CN.xaml"/>
                 <ResourceDictionary Source="Resources/Styles/Aero.xaml"/>
+                <ResourceDictionary Source="Resources/Styles/ProcessPipeline.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

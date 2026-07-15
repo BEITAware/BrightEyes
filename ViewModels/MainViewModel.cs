@@ -1,512 +1,489 @@
+using BrightEyes.Processing;
+using BrightEyes.Processing.Contracts;
+using BrightEyes.Processing.Documents;
+using BrightEyes.Processing.Execution;
+using BrightEyes.Processing.Parameters;
+using BrightEyes.Processing.BuiltIn;
 using BrightEyes.Renderer;
 using Microsoft.Win32;
-using PhotoSauce.MagicScaler;
-using PhotoSauce.MagicScaler.Transforms;
-using System;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
-using System.Drawing;
 using System.IO;
-using System.Reflection;
-using System.Runtime.InteropServices;
-using System.Threading.Tasks;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using Vortice.Direct3D11;
-using System.Text;
-using System.ComponentModel;
-using System.Globalization;
-using System.Runtime.CompilerServices;
-using WpfPixelFormats = System.Windows.Media.PixelFormats;
 
 namespace BrightEyes.ViewModels;
 
 public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
 {
+    private readonly ProcessRegistry _registry;
+    private readonly MetadataPreflightService _preflight = new();
+    private readonly PipelineSerializer _serializer = new();
+    private readonly PipelineExecutionCoordinator _executor;
     private RendererD3D11? _renderer;
+    private ImageDocument? _activeDocument;
+    private IImageProcess? _selectedProcess;
+    private CancellationTokenSource? _previewCancellation;
     private bool _disposed;
-    private RelayCommand? _openImageCommand;
-    private RelayCommand? _inspectCodecCommand;
-    private string _sdrReferenceWhiteText = "100";
-    private string _sdrDisplayLuminanceText = "100";
-    private DisplayColorMetadata _displayColorMetadata = DisplayColorMetadata.SdrFallback;
-
-    public Action<IntPtr, int, int> InitializeRendererAction { get; }
-    public Action<int, int> ResizeRendererAction { get; }
-    public ICommand WindowClosingCommand { get; }
-    public ICommand OpenImageCommand => _openImageCommand ??= new RelayCommand(_ => OpenImage());
-    public ICommand InspectCodecCommand => _inspectCodecCommand ??= new RelayCommand(_ => InspectStarwardCodec());
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    public string SdrReferenceWhiteText
-    {
-        get => _sdrReferenceWhiteText;
-        set
-        {
-            if (_sdrReferenceWhiteText == value) return;
-            _sdrReferenceWhiteText = value;
-            OnPropertyChanged();
-            UpdateSdrCalibration();
-        }
-    }
-
-    public string SdrDisplayLuminanceText
-    {
-        get => _sdrDisplayLuminanceText;
-        set
-        {
-            if (_sdrDisplayLuminanceText == value) return;
-            _sdrDisplayLuminanceText = value;
-            OnPropertyChanged();
-            UpdateSdrCalibration();
-        }
-    }
-
-    public bool IsSdrCalibrationEnabled => !_displayColorMetadata.IsHdr;
-
-    public string DisplayColorSummary => _displayColorMetadata.IsHdr
-        ? $"HDR / {_displayColorMetadata.ColorSpace}  {_displayColorMetadata.MaxLuminanceNits:0.#} nit peak, {_displayColorMetadata.MaxFullFrameLuminanceNits:0.#} nit full frame, SDR white {_displayColorMetadata.SdrWhiteLevelNits:0.#} nit{(_displayColorMetadata.HasSystemSdrWhiteLevel ? string.Empty : " (fallback)")}"
-        : $"SDR / {_displayColorMetadata.ColorSpace}";
-
-    static MainViewModel()
-    {
-        // MagicScaler requires an explicit codec registration. Microsoft WIC
-        // codecs cover JPEG/PNG/TIFF and installed Microsoft image extensions.
-        CodecManager.Configure(codecs => codecs.UseWicCodecs(WicCodecPolicy.Microsoft));
-    }
+    private bool _isBusy;
+    private string _statusText = "打开图像以生成过程。";
+    private string _inspectorText = "来源元数据将在预读后显示。";
 
     public MainViewModel()
     {
+        _registry = ProcessRegistry.Discover();
+        _executor = new PipelineExecutionCoordinator(() => _renderer);
+        Documents = new ObservableCollection<ImageDocument>();
+        SelectedParameters = new ObservableCollection<ProcessParameterViewModel>();
+        SelectedBasicParameters = new ObservableCollection<ProcessParameterViewModel>();
+        SelectedAdvancedParameters = new ObservableCollection<ProcessParameterViewModel>();
+        ActiveOscilloscopes = new ObservableCollection<OscilloscopeProcess>();
+        ProcessRibbonGroups = _registry.Descriptors
+            .Where(descriptor => descriptor.Definition.InputType != ProcessDataType.None)
+            .GroupBy(descriptor => (descriptor.Definition.RibbonTab, descriptor.Definition.RibbonGroup))
+            .Select(group => new ProcessRibbonGroupViewModel(
+                group.Key.RibbonTab,
+                group.Key.RibbonGroup,
+                group.Select(descriptor => new ProcessCatalogItemViewModel(descriptor)).ToArray()))
+            .ToArray();
+
+        OpenImageCommand = new RelayCommand(_ => OpenImage(), _ => !IsBusy);
+        SavePipelineCommand = new RelayCommand(_ => SavePipeline(), _ => ActiveDocument is not null);
+        UndoCommand = new RelayCommand(_ => { ActiveDocument?.Undo.Undo(); RefreshCommandState(); }, _ => ActiveDocument?.Undo.CanUndo == true);
+        RedoCommand = new RelayCommand(_ => { ActiveDocument?.Undo.Redo(); RefreshCommandState(); }, _ => ActiveDocument?.Undo.CanRedo == true);
+        InsertProcessCommand = new RelayCommand(InsertCatalogItem, parameter => parameter is ProcessCatalogItemViewModel && ActiveDocument is not null);
+        DeleteProcessCommand = new RelayCommand(DeleteProcess, parameter => parameter is IImageProcess process && process.Descriptor.Definition.CanDelete);
+        ToggleProcessCommand = new RelayCommand(ToggleProcess, parameter => parameter is IImageProcess process && process.Descriptor.Definition.CanDisable);
+        ResetProcessCommand = new RelayCommand(parameter => { if (parameter is IImageProcess process) process.ResetParameters(); });
+        RestoreAutomaticCommand = new RelayCommand(parameter => { if (parameter is IImageProcess process) process.RestoreAutomaticParameters(); });
+        CopyParametersCommand = new RelayCommand(CopyParameters, parameter => parameter is IImageProcess);
+        PasteParametersCommand = new RelayCommand(PasteParameters, parameter => parameter is IImageProcess);
+        InspectInputCommand = new RelayCommand(parameter => InspectConnection(parameter as IImageProcess, true));
+        InspectOutputCommand = new RelayCommand(parameter => InspectConnection(parameter as IImageProcess, false));
         WindowClosingCommand = new RelayCommand(_ => Dispose());
-        InitializeRendererAction = (handle, width, height) =>
-        {
-            if (handle == IntPtr.Zero || width <= 0 || height <= 0) return;
-            _renderer = new RendererD3D11(handle, width, height);
-            _renderer.Initialize();
-            // Keep the application's existing solid blue presentation background.
-            _renderer.SetSdrBackgroundColor(249f / 255f, 250f / 255f, 254f / 255f, 1f);
-            _renderer.SetHdrBackgroundColor(0.58f, 0.59f, 0.62f, 1f);
-            _displayColorMetadata = _renderer.DisplayColorMetadata;
-            OnPropertyChanged(nameof(IsSdrCalibrationEnabled));
-            OnPropertyChanged(nameof(DisplayColorSummary));
-            UpdateSdrCalibration();
-            _renderer.Start();
-        };
+
+        InitializeRendererAction = InitializeRenderer;
         ResizeRendererAction = (width, height) => _renderer?.Resize(width, height);
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public ObservableCollection<ImageDocument> Documents { get; }
+    public ObservableCollection<ProcessParameterViewModel> SelectedParameters { get; }
+    public ObservableCollection<ProcessParameterViewModel> SelectedBasicParameters { get; }
+    public ObservableCollection<ProcessParameterViewModel> SelectedAdvancedParameters { get; }
+    public ObservableCollection<OscilloscopeProcess> ActiveOscilloscopes { get; }
+    public IReadOnlyList<ProcessRibbonGroupViewModel> ProcessRibbonGroups { get; }
+    public Func<IntPtr, int, int, bool> InitializeRendererAction { get; }
+    public Action<int, int> ResizeRendererAction { get; }
+    public ICommand WindowClosingCommand { get; }
+    public ICommand OpenImageCommand { get; }
+    public ICommand SavePipelineCommand { get; }
+    public ICommand UndoCommand { get; }
+    public ICommand RedoCommand { get; }
+    public ICommand InsertProcessCommand { get; }
+    public ICommand DeleteProcessCommand { get; }
+    public ICommand ToggleProcessCommand { get; }
+    public ICommand ResetProcessCommand { get; }
+    public ICommand RestoreAutomaticCommand { get; }
+    public ICommand CopyParametersCommand { get; }
+    public ICommand PasteParametersCommand { get; }
+    public ICommand InspectInputCommand { get; }
+    public ICommand InspectOutputCommand { get; }
+
+    public ImageDocument? ActiveDocument
+    {
+        get => _activeDocument;
+        set
+        {
+            if (ReferenceEquals(_activeDocument, value)) return;
+            if (_activeDocument is not null)
+                _activeDocument.PipelineChanged -= OnPipelineChanged;
+            _activeDocument = value;
+            if (_activeDocument is not null)
+            {
+                _activeDocument.PipelineChanged += OnPipelineChanged;
+                _activeDocument.DisplayMetadata = _renderer?.DisplayColorMetadata ?? DisplayColorMetadata.SdrFallback;
+            }
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(MetadataFacts));
+            RebuildOscilloscopes();
+            SelectedProcess = value?.SelectedProcess;
+            StatusText = value is null
+                ? "打开图像以生成过程。"
+                : value.HasExecuted
+                    ? "已切换到处理完成的图像。"
+                    : "元数据预读与图像过程已准备，正在自动处理。";
+            RefreshCommandState();
+        }
+    }
+
+    public IImageProcess? SelectedProcess
+    {
+        get => _selectedProcess;
+        set
+        {
+            if (ReferenceEquals(_selectedProcess, value)) return;
+            _selectedProcess = value;
+            if (ActiveDocument is not null) ActiveDocument.SelectedProcess = value;
+            RebuildSelectedParameters();
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SelectedProcessName));
+            OnPropertyChanged(nameof(SelectedProcessDescription));
+        }
+    }
+
+    public string SelectedProcessName => SelectedProcess is null
+        ? "未选择过程"
+        : ResourceText.Resolve(SelectedProcess.Descriptor.Definition.NameResourceKey);
+
+    public string SelectedProcessDescription => SelectedProcess is null
+        ? ""
+        : ResourceText.Resolve(SelectedProcess.Descriptor.Definition.DescriptionResourceKey);
+
+    public IReadOnlyList<MetadataFact> MetadataFacts => ActiveDocument?.Source.DetectedMetadata.Facts ?? Array.Empty<MetadataFact>();
+
+    public bool IsRendererReady => _renderer is not null;
+
+    public bool IsBusy
+    {
+        get => _isBusy;
+        private set
+        {
+            if (SetField(ref _isBusy, value)) RefreshCommandState();
+        }
+    }
+
+    public string StatusText
+    {
+        get => _statusText;
+        private set => SetField(ref _statusText, value);
+    }
+
+    public string InspectorText
+    {
+        get => _inspectorText;
+        private set => SetField(ref _inspectorText, value);
+    }
+
+    public string DisplayColorSummary => _renderer is null
+        ? "显示终端尚未初始化"
+        : _renderer.DisplayColorMetadata.IsHdr
+            ? $"HDR / {_renderer.DisplayColorMetadata.ColorSpace} / {_renderer.DisplayColorMetadata.EffectivePeakNits:0.#} nit"
+            : $"SDR / {_renderer.DisplayColorMetadata.ColorSpace}";
+
+    public bool TryInsertProcess(ProcessDescriptor descriptor, int index, out string reason)
+    {
+        if (ActiveDocument is null)
+        {
+            reason = "没有活动文档。";
+            return false;
+        }
+        if (!ActiveDocument.CanInsert(descriptor, index, out reason)) return false;
+        SelectedProcess = ActiveDocument.Insert(descriptor, index);
+        RefreshCommandState();
+        return true;
+    }
+
+    public bool TryMoveProcess(IImageProcess process, int index, out string reason)
+    {
+        if (ActiveDocument is null)
+        {
+            reason = "没有活动文档。";
+            return false;
+        }
+        if (!ActiveDocument.CanMove(process, index, out reason)) return false;
+        bool moved = ActiveDocument.Move(process, index);
+        RefreshCommandState();
+        return moved;
     }
 
     private async void OpenImage()
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            Title = "打开图像",
-            Filter = "Images|*.jpg;*.jpeg;*.png;*.avif;*.heif;*.heic;*.webp;*.tif;*.tiff;*.bmp;*.gif|All files|*.*",
+            Title = "打开图像并预读元数据",
+            Filter = "Images|*.jpg;*.jpeg;*.png;*.avif;*.heif;*.heic;*.webp;*.gif|All files|*.*",
             Multiselect = false
         };
         if (dialog.ShowDialog() != true) return;
-
+        IsBusy = true;
+        StatusText = "正在读取图像与容器级元数据。";
         try
         {
-            byte[] fileBytes = await File.ReadAllBytesAsync(dialog.FileName);
-            await Task.Run(() =>
-            {
-                if (!TryDecodeUltraHdr(fileBytes) && !TryDecodeExplicitHdr(fileBytes))
-                    DecodeWithPhotoSauce(fileBytes);
-            });
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine(ex);
-            System.Windows.MessageBox.Show(ex.Message, "Decode failed", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-
-    private bool TryDecodeUltraHdr(byte[] fileBytes)
-    {
-        try
-        {
-            if (!ContainsAscii(fileBytes, "hdrgm") &&
-                !ContainsAscii(fileBytes, "gainmap") &&
-                !ContainsAscii(fileBytes, "ultrahdr"))
-            {
-                return false;
-            }
-            var asm = LoadStarwardCodecAssembly();
-            if (asm == null) return false;
-            Type decoderType = asm.GetType("Starward.Codec.UltraHdr.UhdrDecoder", true)!;
-            Type compressedType = asm.GetType("Starward.Codec.UltraHdr.UhdrCompressedImage", true)!;
-            Type pixelFormatType = asm.GetType("Starward.Codec.UltraHdr.UhdrPixelFormat", true)!;
-            Type transferType = asm.GetType("Starward.Codec.UltraHdr.UhdrColorTransfer", true)!;
-            Type gamutType = asm.GetType("Starward.Codec.UltraHdr.UhdrColorGamut", true)!;
-            Type rangeType = asm.GetType("Starward.Codec.UltraHdr.UhdrColorRange", true)!;
-
-            object compressed = Activator.CreateInstance(compressedType)!;
-            GCHandle pinned = GCHandle.Alloc(fileBytes, GCHandleType.Pinned);
+            RawImage source = await _preflight.InspectAsync(dialog.FileName, CancellationToken.None);
+            var document = new ImageDocument(source, _registry, _renderer?.DisplayColorMetadata ?? DisplayColorMetadata.SdrFallback);
+            string sidecar = PipelineSerializer.GetDefaultSidecarPath(source.FilePath);
+            bool matchedSource = false;
+            string? restoreWarning = null;
             try
             {
-                SetField(compressedType, compressed, "Data", pinned.AddrOfPinnedObject());
-                SetField(compressedType, compressed, "DataSize", (ulong)fileBytes.LongLength);
-                SetField(compressedType, compressed, "Capacity", (ulong)fileBytes.LongLength);
-                SetField(compressedType, compressed, "ColorGamut", EnumValue(gamutType, "BT2100"));
-                SetField(compressedType, compressed, "ColorTransfer", EnumValue(transferType, "PQ"));
-                SetField(compressedType, compressed, "ColorRange", EnumValue(rangeType, "FullRange"));
-
-                object decoder = Activator.CreateInstance(decoderType)!;
-                decoderType.GetMethod("SetImage", new[] { compressedType })!.Invoke(decoder, new[] { compressed });
-                decoderType.GetMethod("SetOutImagePixelFormat", new[] { pixelFormatType })!.Invoke(decoder, new[] { EnumValue(pixelFormatType, "_32bppRGBA1010102")! });
-                decoderType.GetMethod("SetOutColorTransfer", new[] { transferType })!.Invoke(decoder, new[] { EnumValue(transferType, "PQ")! });
-                decoderType.GetMethod("Decode", Type.EmptyTypes)!.Invoke(decoder, null);
-                object raw = decoderType.GetMethod("GetDecodedImage", Type.EmptyTypes)!.Invoke(decoder, null)!;
-
-                Type rawType = raw.GetType();
-                int width = Convert.ToInt32(GetFieldValue(rawType, raw, "Width"));
-                int height = Convert.ToInt32(GetFieldValue(rawType, raw, "Height"));
-                object planes = GetFieldValue(rawType, raw, "Plane")!;
-                object strides = GetFieldValue(rawType, raw, "Stride")!;
-                IntPtr plane = (IntPtr)GetFixedArray3Element(planes, 0);
-                int rowBytes = checked(Convert.ToInt32(GetFixedArray3Element(strides, 0)) * 4);
-                var output = new float[checked(width * height * 4)];
-                var row = new byte[checked(width * 4)];
-                for (int y = 0; y < height; y++)
-                {
-                    Marshal.Copy(IntPtr.Add(plane, y * rowBytes), row, 0, row.Length);
-                    int dst = y * width * 4;
-                    for (int x = 0; x < width; x++)
-                    {
-                        int o = x * 4;
-                        uint packed = (uint)(row[o] | (row[o + 1] << 8) | (row[o + 2] << 16) | (row[o + 3] << 24));
-                        output[dst++] = (packed & 0x3ff) / 1023f;
-                        output[dst++] = ((packed >> 10) & 0x3ff) / 1023f;
-                        output[dst++] = ((packed >> 20) & 0x3ff) / 1023f;
-                        output[dst++] = ((packed >> 30) & 0x3) / 3f;
-                    }
-                }
-                _renderer?.SetExternalTextureFromRgba32f(output, width, height, ColorSourceMetadata.PqRec2020Opaque);
-                return true;
+                matchedSource = await _serializer.TryLoadAsync(document, _registry, sidecar);
             }
-            finally
+            catch (Exception ex)
             {
-                if (pinned.IsAllocated) pinned.Free();
+                restoreWarning = ex.GetBaseException().Message;
             }
+            Documents.Add(document);
+            ActiveDocument = document;
+            InspectorText = BuildMetadataSummary(source.DetectedMetadata);
+            if (restoreWarning is not null)
+                StatusText = "保存的过程无效，已使用元数据生成默认流程：" + restoreWarning;
+            else if (File.Exists(sidecar))
+                StatusText = matchedSource
+                    ? "已恢复与当前文件身份匹配的保存过程。"
+                    : "已恢复过程，但来源内容身份已变化；自动值已按当前元数据重算，用户覆盖保持不变。";
+
+            await ExecuteOpenedImageAsync(document);
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"UltraHDR decoder declined the image: {ex.Message}");
-            return false;
-        }
-    }
-
-    private static bool ContainsAscii(byte[] data, string text)
-    {
-        byte[] needle = Encoding.ASCII.GetBytes(text);
-        for (int i = 0; i <= data.Length - needle.Length; i++)
-        {
-            int j = 0;
-            for (; j < needle.Length; j++)
-            {
-                byte value = data[i + j];
-                byte expected = needle[j];
-                if (value != expected && value != (expected >= 'a' && expected <= 'z' ? (byte)(expected - 32) : expected)) break;
-            }
-            if (j == needle.Length) return true;
-        }
-        return false;
-    }
-
-    private bool TryDecodeExplicitHdr(byte[] fileBytes)
-    {
-        if (!ColorMetadataDetector.TryDetect(fileBytes, out ColorSourceMetadata metadata) ||
-            metadata.Transfer is not (ColorTransferFunction.Pq or ColorTransferFunction.Hlg))
-        {
-            return false;
-        }
-
-        // WIC color-manages HDR AVIF frames to an 8-bit SDR bitmap. Decode
-        // those files through the libavif command line tool shipped by
-        // Starward.Codec so the original PQ/HLG code values reach the GPU.
-        if (IsAvif(fileBytes) && TryDecodeAvifWithNativeDecoder(fileBytes, metadata))
-        {
-            return true;
-        }
-
-        try
-        {
-            using var stream = new MemoryStream(fileBytes, writable: false);
-            BitmapDecoder decoder = BitmapDecoder.Create(
-                stream,
-                BitmapCreateOptions.PreservePixelFormat,
-                BitmapCacheOption.OnLoad);
-            BitmapFrame frame = decoder.Frames[0];
-            BitmapSource source = frame.Format == WpfPixelFormats.Rgba128Float
-                ? frame
-                : new FormatConvertedBitmap(frame, WpfPixelFormats.Rgba128Float, null, 0.0);
-            int stride = checked(source.PixelWidth * sizeof(float) * 4);
-            float[] pixels = new float[checked(source.PixelWidth * source.PixelHeight * 4)];
-            source.CopyPixels(pixels, stride, 0);
-            // The WIC AVIF decoder exposes an SDR-rendered Bgr32 frame rather
-            // than the signalled PQ/HLG samples. Treat this fallback as sRGB
-            // so it cannot be decoded a second time as PQ and overexposed.
-            ColorSourceMetadata effectiveMetadata = IsAvif(fileBytes) && frame.Format != WpfPixelFormats.Rgba128Float
-                ? ColorSourceMetadata.Sdr
-                : metadata;
-            _renderer?.SetExternalTextureFromRgba32f(pixels, source.PixelWidth, source.PixelHeight, effectiveMetadata);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            throw new NotSupportedException(
-                "The image declares a PQ/HLG transfer function, but the installed WIC codec cannot expose its pixels without SDR conversion.",
-                ex);
-        }
-    }
-
-    private void DecodeWithPhotoSauce(byte[] fileBytes)
-    {
-        bool isJpeg = IsJpeg(fileBytes);
-        using var stream = new MemoryStream(fileBytes, writable: false);
-        var settings = new ProcessImageSettings
-        {
-            ColorProfileMode = ColorProfileMode.ConvertToSrgb,
-            BlendingMode = GammaMode.Linear
-        };
-        using var pipeline = MagicImageProcessor.BuildPipeline(stream, settings);
-        Guid outputFormat = isJpeg
-            ? PhotoSauce.MagicScaler.PixelFormats.Bgr24bpp
-            : PhotoSauce.MagicScaler.PixelFormats.Bgra32bpp;
-        pipeline.AddTransform(new FormatConversionTransform(outputFormat));
-        var source = pipeline.PixelSource;
-        if (source.Format != outputFormat)
-        {
-            throw new InvalidDataException(
-                $"The SDR decoder returned pixel format {source.Format} instead of the requested {outputFormat}.");
-        }
-
-        if (isJpeg)
-        {
-            DecodeOpaqueSdrJpeg(source);
-            return;
-        }
-
-        int stride = checked(source.Width * 4);
-        byte[] pixels = new byte[checked(stride * source.Height)];
-        source.CopyPixels(new Rectangle(0, 0, source.Width, source.Height), stride, pixels);
-        _renderer?.SetExternalTextureFromBgra32(pixels, source.Width, source.Height);
-    }
-
-    private void DecodeOpaqueSdrJpeg(IPixelSource source)
-    {
-        int stride = checked(source.Width * 4);
-        byte[] pixels = new byte[checked(stride * source.Height)];
-        source.CopyPixels(new Rectangle(0, 0, source.Width, source.Height), stride, pixels);
-
-        // Expand each packed BGR row backwards so source bytes cannot be
-        // overwritten before they have been copied to their BGRA position.
-        for (int y = 0; y < source.Height; y++)
-        {
-            int rowOffset = y * stride;
-            for (int x = source.Width - 1; x >= 0; x--)
-            {
-                int sourceOffset = rowOffset + x * 3;
-                int destinationOffset = rowOffset + x * 4;
-                byte blue = pixels[sourceOffset];
-                byte green = pixels[sourceOffset + 1];
-                byte red = pixels[sourceOffset + 2];
-                pixels[destinationOffset] = blue;
-                pixels[destinationOffset + 1] = green;
-                pixels[destinationOffset + 2] = red;
-                pixels[destinationOffset + 3] = byte.MaxValue;
-            }
-        }
-
-        ColorSourceMetadata metadata = ColorSourceMetadata.Sdr with
-        {
-            Alpha = AlphaRepresentation.Opaque
-        };
-        _renderer?.SetExternalTextureFromBgra32(pixels, source.Width, source.Height, metadata);
-    }
-
-    private static bool IsJpeg(ReadOnlySpan<byte> data) =>
-        data.Length >= 3 && data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff;
-
-    private static bool IsAvif(ReadOnlySpan<byte> data)
-    {
-        if (data.Length < 16 || !data.Slice(4, 4).SequenceEqual("ftyp"u8))
-            return false;
-
-        uint boxSize = ReadBigEndian32(data);
-        int boxEnd = boxSize >= 16 && boxSize <= data.Length
-            ? (int)boxSize
-            : Math.Min(data.Length, 256);
-        for (int offset = 8; offset + 4 <= boxEnd; offset += 4)
-        {
-            ReadOnlySpan<byte> brand = data.Slice(offset, 4);
-            if (brand.SequenceEqual("avif"u8) || brand.SequenceEqual("avis"u8))
-                return true;
-        }
-        return false;
-    }
-
-    private static uint ReadBigEndian32(ReadOnlySpan<byte> data) =>
-        ((uint)data[0] << 24) | ((uint)data[1] << 16) | ((uint)data[2] << 8) | data[3];
-
-    private bool TryDecodeAvifWithNativeDecoder(byte[] fileBytes, ColorSourceMetadata metadata)
-    {
-        string? decoderPath = FindAvifDecoder();
-        if (decoderPath == null)
-            return false;
-
-        string token = Path.Combine(Path.GetTempPath(), $"BrightEyes-{Guid.NewGuid():N}");
-        string inputPath = token + ".avif";
-        string outputPath = token + ".png";
-        try
-        {
-            File.WriteAllBytes(inputPath, fileBytes);
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = decoderPath,
-                UseShellExecute = false,
-                RedirectStandardError = true,
-                RedirectStandardOutput = true,
-                CreateNoWindow = true
-            };
-            startInfo.ArgumentList.Add("--depth");
-            startInfo.ArgumentList.Add("16");
-            startInfo.ArgumentList.Add(inputPath);
-            startInfo.ArgumentList.Add(outputPath);
-
-            using var process = Process.Start(startInfo);
-            if (process == null)
-                return false;
-            Task<string> standardOutput = process.StandardOutput.ReadToEndAsync();
-            Task<string> standardError = process.StandardError.ReadToEndAsync();
-            process.WaitForExit();
-            Task.WaitAll(standardOutput, standardError);
-            if (process.ExitCode != 0 || !File.Exists(outputPath))
-            {
-                Debug.WriteLine($"libavif failed to decode HDR AVIF: {standardError.Result}");
-                return false;
-            }
-
-            using var stream = File.OpenRead(outputPath);
-            BitmapDecoder decoder = BitmapDecoder.Create(
-                stream,
-                BitmapCreateOptions.PreservePixelFormat,
-                BitmapCacheOption.OnLoad);
-            BitmapFrame frame = decoder.Frames[0];
-            var source = new FormatConvertedBitmap(frame, WpfPixelFormats.Rgba64, null, 0.0);
-            int width = source.PixelWidth;
-            int height = source.PixelHeight;
-            int stride = checked(width * 8);
-            byte[] raw = new byte[checked(stride * height)];
-            source.CopyPixels(raw, stride, 0);
-            float[] pixels = new float[checked(width * height * 4)];
-            int dst = 0;
-            for (int i = 0; i < raw.Length; i += 2)
-            {
-                ushort value = (ushort)(raw[i] | (raw[i + 1] << 8));
-                pixels[dst++] = value / 65535.0f;
-            }
-
-            _renderer?.SetExternalTextureFromRgba32f(pixels, width, height, metadata);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Native HDR AVIF decode unavailable: {ex.Message}");
-            return false;
+            StatusText = "元数据预读失败：" + ex.GetBaseException().Message;
+            Debug.WriteLine(ex);
         }
         finally
         {
-            TryDeleteFile(inputPath);
-            TryDeleteFile(outputPath);
+            IsBusy = false;
         }
     }
 
-    private static string? FindAvifDecoder()
+    private async Task ExecuteOpenedImageAsync(ImageDocument document)
     {
-        string[] candidates =
-        {
-            Path.Combine(AppContext.BaseDirectory, "win-x64", "avifdec.exe"),
-            Path.Combine(AppContext.BaseDirectory, "avifdec.exe")
-        };
-        foreach (string candidate in candidates)
-            if (File.Exists(candidate))
-                return candidate;
-        return null;
-    }
-
-    private static void TryDeleteFile(string path)
-    {
+        StatusText = "图像已打开，正在自动处理。";
         try
         {
-            if (File.Exists(path))
-                File.Delete(path);
+            await _executor.ExecuteAsync(document);
+            IImageProcess? failedProcess = document.Processes.FirstOrDefault(process => process.State == ProcessState.Error);
+            if (failedProcess is not null)
+            {
+                StatusText = "自动处理失败：" + failedProcess.Diagnostic;
+            }
+            else
+            {
+                StatusText = document.HasLastValidFrame
+                    ? "图像处理完成；普通路径保持一次 CPU 到 GPU 上传。"
+                    : "自动处理失败：过程未产生有效视图。";
+            }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Could not remove temporary image file '{path}': {ex.Message}");
+            StatusText = "自动处理失败：" + ex.GetBaseException().Message;
+            Debug.WriteLine(ex);
         }
     }
 
-    private static Assembly? LoadStarwardCodecAssembly()
+    private async void SavePipeline()
     {
-        try { return Assembly.Load("Starward.Codec"); }
-        catch
-        {
-            string path = Path.Combine(AppContext.BaseDirectory, "Starward.Codec.dll");
-            return File.Exists(path) ? Assembly.LoadFrom(path) : null;
-        }
-    }
-
-    private static void SetField(Type type, object instance, string name, object? value) =>
-        (type.GetField(name, BindingFlags.Public | BindingFlags.Instance) ?? throw new MissingFieldException(type.FullName, name)).SetValue(instance, value);
-
-    private static object? GetFieldValue(Type type, object instance, string name) =>
-        (type.GetField(name, BindingFlags.Public | BindingFlags.Instance) ?? throw new MissingFieldException(type.FullName, name)).GetValue(instance);
-
-    private static object? EnumValue(Type type, string name) =>
-        (type.GetField(name, BindingFlags.Public | BindingFlags.Static) ?? throw new ArgumentException($"Enum {type.Name} has no value {name}")).GetValue(null);
-
-    private static object GetFixedArray3Element(object value, int index)
-    {
-        Type type = value.GetType();
-        var item = type.GetProperty("Item", BindingFlags.Public | BindingFlags.Instance, null, null, new[] { typeof(int) }, null);
-        if (item != null) return item.GetValue(value, new object[] { index })!;
-        string[][] candidates = { new[] { "Value0", "Value1", "Value2" }, new[] { "Item0", "Item1", "Item2" }, new[] { "X", "Y", "Z" }, new[] { "_0", "_1", "_2" } };
-        foreach (string[] names in candidates)
-        {
-            var field = type.GetField(names[index], BindingFlags.Public | BindingFlags.Instance);
-            if (field != null) return field.GetValue(value)!;
-        }
-        Type elementType = type.IsGenericType ? type.GetGenericArguments()[0] : throw new MissingFieldException(type.FullName, "array element");
-        int size = elementType == typeof(IntPtr) ? IntPtr.Size : Marshal.SizeOf(elementType);
-        GCHandle pinned = GCHandle.Alloc(value, GCHandleType.Pinned);
+        if (ActiveDocument is null) return;
+        string sidecar = PipelineSerializer.GetDefaultSidecarPath(ActiveDocument.Source.FilePath);
         try
         {
-            IntPtr ptr = pinned.AddrOfPinnedObject() + index * size;
-            if (elementType == typeof(IntPtr)) return Marshal.ReadIntPtr(ptr);
-            if (elementType == typeof(uint)) return unchecked((uint)Marshal.ReadInt32(ptr));
-            if (elementType == typeof(int)) return Marshal.ReadInt32(ptr);
-            return Marshal.PtrToStructure(ptr, elementType)!;
+            await _serializer.SaveAsync(ActiveDocument, sidecar);
+            StatusText = $"过程已保存：{sidecar}";
         }
-        finally { pinned.Free(); }
+        catch (Exception ex)
+        {
+            StatusText = "保存过程失败：" + ex.GetBaseException().Message;
+        }
     }
 
-    private void InspectStarwardCodec()
+    private void InsertCatalogItem(object? parameter)
+    {
+        if (parameter is not ProcessCatalogItemViewModel item || ActiveDocument is null) return;
+        int selectedIndex = SelectedProcess is null ? ActiveDocument.Processes.Count : ActiveDocument.Processes.IndexOf(SelectedProcess) + 1;
+        if (!TryInsertProcess(item.Descriptor, selectedIndex, out string reason)) StatusText = reason;
+    }
+
+    private void DeleteProcess(object? parameter)
+    {
+        if (parameter is not IImageProcess process || ActiveDocument is null) return;
+        if (ActiveDocument.Remove(process))
+        {
+            SelectedProcess = ActiveDocument.SelectedProcess;
+            RefreshCommandState();
+        }
+    }
+
+    private void ToggleProcess(object? parameter)
+    {
+        if (parameter is not IImageProcess process || ActiveDocument is null) return;
+        ActiveDocument.SetEnabled(process, !process.IsEnabled);
+        RefreshCommandState();
+    }
+
+    private static void CopyParameters(object? parameter)
+    {
+        if (parameter is not IImageProcess process) return;
+        var options = new JsonSerializerOptions { Converters = { new JsonStringEnumConverter() } };
+        string json = JsonSerializer.Serialize(process.Parameters.Select(item => new
+        {
+            id = item.Definition.StableId,
+            automatic = item.IsAutomatic,
+            valueType = item.ValueType.AssemblyQualifiedName,
+            value = item.UserOverrideValue
+        }), options);
+        System.Windows.Clipboard.SetText(json);
+    }
+
+    private void PasteParameters(object? parameter)
+    {
+        if (parameter is not IImageProcess process || !System.Windows.Clipboard.ContainsText()) return;
+        try
+        {
+            using JsonDocument json = JsonDocument.Parse(System.Windows.Clipboard.GetText());
+            foreach (JsonElement item in json.RootElement.EnumerateArray())
+            {
+                string? id = item.GetProperty("id").GetString();
+                IProcessParameter? target = process.Parameters.FirstOrDefault(candidate => candidate.Definition.StableId == id);
+                if (target is null) continue;
+                bool automatic = item.GetProperty("automatic").GetBoolean();
+                if (automatic)
+                {
+                    target.RestoreAutomatic();
+                }
+                else
+                {
+                    object? value = item.GetProperty("value").Deserialize(target.ValueType, new JsonSerializerOptions { Converters = { new JsonStringEnumConverter() } });
+                    target.SetUserValue(value);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText = "剪贴板参数无效：" + ex.GetBaseException().Message;
+        }
+    }
+
+    private void InspectConnection(IImageProcess? process, bool input)
+    {
+        if (process is null) return;
+        InspectorText = input
+            ? $"输入硬类型：{process.Descriptor.Definition.InputType}\n{process.IncomingConnectionMessage}"
+            : $"输出硬类型：{process.Descriptor.Definition.OutputType}\n{FormatSemantics(process.OutputSemantics)}";
+    }
+
+    private void OnPipelineChanged(object? sender, PipelineChangedEventArgs e)
+    {
+        RebuildSelectedParameters();
+        RebuildOscilloscopes();
+        RefreshCommandState();
+        if (ActiveDocument?.HasExecuted != true) return;
+        _previewCancellation?.Cancel();
+        _previewCancellation?.Dispose();
+        _previewCancellation = new CancellationTokenSource();
+        SchedulePreview(e.RequiresDecode, _previewCancellation.Token);
+    }
+
+    private async void SchedulePreview(bool forceDecode, CancellationToken token)
     {
         try
         {
-            var asm = LoadStarwardCodecAssembly();
-            if (asm == null) { System.Windows.MessageBox.Show("Starward.Codec is unavailable."); return; }
-            Debug.WriteLine($"Assembly: {asm.FullName}");
-            foreach (var type in asm.GetExportedTypes())
-                if (type.Namespace?.Contains("Starward.Codec", StringComparison.OrdinalIgnoreCase) == true)
-                    Debug.WriteLine(type.FullName);
+            await Task.Delay(140, token);
+            if (token.IsCancellationRequested || ActiveDocument is null || !IsRendererReady) return;
+            await _executor.ExecuteAsync(ActiveDocument, forceDecode);
+            if (!token.IsCancellationRequested) StatusText = "异步预览已更新。";
         }
-        catch (Exception ex) { System.Windows.MessageBox.Show(ex.Message, "Codec inspection failed"); }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (!token.IsCancellationRequested)
+                StatusText = "异步预览失败，已保留最后有效画面：" + ex.GetBaseException().Message;
+            Debug.WriteLine(ex);
+        }
     }
+
+    private void RebuildSelectedParameters()
+    {
+        foreach (ProcessParameterViewModel parameter in SelectedParameters) parameter.Dispose();
+        SelectedParameters.Clear();
+        SelectedBasicParameters.Clear();
+        SelectedAdvancedParameters.Clear();
+        if (SelectedProcess is not null)
+            foreach (IProcessParameter parameter in SelectedProcess.Parameters)
+            {
+                var viewModel = new ProcessParameterViewModel(parameter);
+                SelectedParameters.Add(viewModel);
+                (viewModel.IsAdvanced ? SelectedAdvancedParameters : SelectedBasicParameters).Add(viewModel);
+            }
+    }
+
+    private void RebuildOscilloscopes()
+    {
+        ActiveOscilloscopes.Clear();
+        if (ActiveDocument is null) return;
+        foreach (OscilloscopeProcess scope in ActiveDocument.Processes.OfType<OscilloscopeProcess>())
+            ActiveOscilloscopes.Add(scope);
+    }
+
+    private bool InitializeRenderer(IntPtr handle, int width, int height)
+    {
+        if (_disposed || handle == IntPtr.Zero || width <= 0 || height <= 0) return false;
+        if (_renderer is not null) return true;
+
+        RendererD3D11? renderer = null;
+        try
+        {
+            renderer = new RendererD3D11(handle, width, height);
+            renderer.DiagnosticRaised += OnRendererDiagnostic;
+            renderer.Initialize();
+            renderer.SetSdrBackgroundColor(249.0f / 255.0f, 250.0f / 255.0f, 254.0f / 255.0f, 1.0f);
+            renderer.SetHdrBackgroundColor(0.58f, 0.59f, 0.62f, 1.0f);
+            renderer.Start();
+            _renderer = renderer;
+            if (ActiveDocument is not null)
+            {
+                ActiveDocument.DisplayMetadata = renderer.DisplayColorMetadata;
+                StatusText = "D3D11 渲染器已就绪；可执行完整解码与渲染。";
+            }
+            OnPropertyChanged(nameof(IsRendererReady));
+            OnPropertyChanged(nameof(DisplayColorSummary));
+            RefreshCommandState();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            StatusText = "GPU 初始化失败，过程执行暂不可用：" + ex.GetBaseException().Message;
+            if (renderer is not null)
+            {
+                renderer.DiagnosticRaised -= OnRendererDiagnostic;
+                renderer.Dispose();
+            }
+            _renderer = null;
+            OnPropertyChanged(nameof(IsRendererReady));
+            OnPropertyChanged(nameof(DisplayColorSummary));
+            RefreshCommandState();
+            return false;
+        }
+    }
+
+    private void OnRendererDiagnostic(string message)
+    {
+        System.Windows.Application.Current.Dispatcher.BeginInvoke(() => StatusText = message);
+    }
+
+    private static string BuildMetadataSummary(DetectedImageMetadata metadata)
+    {
+        string assumptions = metadata.HasAssumptions ? "包含明确标记的假设" : "无默认假设";
+        string conflicts = metadata.Conflicts.Count == 0 ? "无声明冲突" : string.Join("；", metadata.Conflicts);
+        return $"{metadata.ContainerFormat} / {metadata.PixelWidth} x {metadata.PixelHeight} / {metadata.BitDepth} bit\n" +
+               $"{metadata.Primaries} / {metadata.Transfer} / {metadata.PhotometricModel}\n" +
+               $"Reference white {metadata.ReferenceWhiteNits:0.#} nit / peak {metadata.NominalPeakNits:0.#} nit\n" +
+               $"{assumptions}；{conflicts}";
+    }
+
+    private static string FormatSemantics(ImageSemantics? semantics) => semantics is null
+        ? "此硬类型没有图像语义。"
+        : $"{semantics.Primaries} / {semantics.Transfer} / {semantics.PhotometricModel}\n" +
+          $"reference white {semantics.ReferenceWhiteNits:0.##} nit / peak {semantics.NominalPeakNits:0.##} nit / {semantics.Range} / {semantics.Alpha}";
+
+    private static void RefreshCommandState() => CommandManager.InvalidateRequerySuggested();
 
     public void SetExternalSharedTextureHandle(IntPtr handle, bool isRec2020PQ = true) => _renderer?.SetExternalTextureFromSharedHandle(handle, isRec2020PQ);
     public void SetExternalSharedTextureHandle(IntPtr handle, ColorSourceMetadata metadata) => _renderer?.SetExternalTextureFromSharedHandle(handle, metadata);
@@ -514,31 +491,29 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
     public void SetExternalTexture(ID3D11Texture2D texture, ColorSourceMetadata metadata) => _renderer?.SetExternalTexture(texture, metadata);
     public void ClearExternalTexture() => _renderer?.ClearExternalTexture();
 
-    private void UpdateSdrCalibration()
+    private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
-        if (_displayColorMetadata.IsHdr) return;
-        if (!TryParsePositive(_sdrReferenceWhiteText, out float referenceWhite) ||
-            !TryParsePositive(_sdrDisplayLuminanceText, out float displayPeak))
-        {
-            return;
-        }
-        _renderer?.SetSdrCalibration(referenceWhite, displayPeak);
-    }
-
-    private static bool TryParsePositive(string value, out float result)
-    {
-        bool parsed = float.TryParse(value, NumberStyles.Float, CultureInfo.CurrentCulture, out result) ||
-                      float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result);
-        return parsed && float.IsFinite(result) && result > 0.0f;
+        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
+        field = value;
+        OnPropertyChanged(propertyName);
+        return true;
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        PropertyChanged?.Invoke(this, new(propertyName));
 
     public void Dispose()
     {
         if (_disposed) return;
+        _previewCancellation?.Cancel();
+        _previewCancellation?.Dispose();
+        foreach (ImageDocument document in Documents) document.Dispose();
+        if (_renderer is not null) _renderer.DiagnosticRaised -= OnRendererDiagnostic;
         _renderer?.Dispose();
+        _renderer = null;
+        OnPropertyChanged(nameof(IsRendererReady));
+        OnPropertyChanged(nameof(DisplayColorSummary));
+        RefreshCommandState();
         _disposed = true;
         GC.SuppressFinalize(this);
     }

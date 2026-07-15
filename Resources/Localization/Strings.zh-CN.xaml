@@ -6,4 +6,57 @@
     <system:String x:Key="Ribbon_Tab_View">视图</system:String>
     <system:String x:Key="Ribbon_Tab_Analysis">分析</system:String>
 
+    <system:String x:Key="ProcessGroup_Input">输入与解码</system:String>
+    <system:String x:Key="ProcessGroup_Color">色彩与映射</system:String>
+    <system:String x:Key="ProcessGroup_View">视图</system:String>
+    <system:String x:Key="ProcessGroup_Analysis">分析</system:String>
+    <system:String x:Key="ProcessTab_Process">过程</system:String>
+
+    <system:String x:Key="Process_ImageSource_Name">图像</system:String>
+    <system:String x:Key="Process_ImageSource_Description">压缩文件、容器和不可变来源元数据。</system:String>
+    <system:String x:Key="Process_Decoder_Name">解码器</system:String>
+    <system:String x:Key="Process_Decoder_Description">选择后端并生成线性 scRGB 中间图像。</system:String>
+    <system:String x:Key="Process_RenderMapper_Name">渲染映射器</system:String>
+    <system:String x:Key="Process_RenderMapper_Description">执行 HLG OOTF、亮度、色调和色域映射。</system:String>
+    <system:String x:Key="Process_View_Name">视图</system:String>
+    <system:String x:Key="Process_View_Description">透传观察图像并执行终端编码与提交。</system:String>
+    <system:String x:Key="Process_Oscilloscope_Name">示波器</system:String>
+    <system:String x:Key="Process_Oscilloscope_Description">GPU 透传分析，只回读紧凑统计结果。</system:String>
+
+    <system:String x:Key="Parameter_DecoderBackend">解码后端</system:String>
+    <system:String x:Key="Parameter_AllowFallback">允许后端回退</system:String>
+    <system:String x:Key="Parameter_Frame">帧</system:String>
+    <system:String x:Key="Parameter_ApplyExif">应用 EXIF 方向</system:String>
+    <system:String x:Key="Parameter_AlphaMode">Alpha 处理</system:String>
+    <system:String x:Key="Parameter_Precision">精度</system:String>
+    <system:String x:Key="Parameter_RenderPreset">映射预设</system:String>
+    <system:String x:Key="Parameter_SdrWhite">SDR 白</system:String>
+    <system:String x:Key="Parameter_TargetPeak">目标峰值</system:String>
+    <system:String x:Key="Parameter_HlgOotf">HLG OOTF</system:String>
+    <system:String x:Key="Parameter_GamutMapping">色域映射</system:String>
+    <system:String x:Key="Parameter_UltraHdrReconstruct">Ultra HDR 重建</system:String>
+    <system:String x:Key="Parameter_Background">背景与合成</system:String>
+    <system:String x:Key="Parameter_ScopeKind">示波器类型</system:String>
+    <system:String x:Key="Parameter_ScopeChannel">通道</system:String>
+    <system:String x:Key="Parameter_SignalUnit">信号单位</system:String>
+    <system:String x:Key="Parameter_ShowNegative">显示负值</system:String>
+    <system:String x:Key="Parameter_ShowOverrange">显示超范围</system:String>
+    <system:String x:Key="Parameter_SampleRate">采样率</system:String>
+    <system:String x:Key="Parameter_RefreshRate">更新频率</system:String>
+
+    <system:String x:Key="Parameter_InputPrimaries">输入解释：原色</system:String>
+    <system:String x:Key="Parameter_InputTransfer">输入解释：传递函数</system:String>
+    <system:String x:Key="Parameter_InputPhotometric">输入解释：光度模型</system:String>
+    <system:String x:Key="Parameter_InputReferenceWhite">输入解释：参考白</system:String>
+    <system:String x:Key="Parameter_InputPeak">输入解释：峰值</system:String>
+    <system:String x:Key="Parameter_InputRange">输入解释：范围</system:String>
+    <system:String x:Key="Parameter_InputAlpha">输入解释：Alpha</system:String>
+    <system:String x:Key="Parameter_OutputPrimaries">输出声明：原色</system:String>
+    <system:String x:Key="Parameter_OutputTransfer">输出声明：传递函数</system:String>
+    <system:String x:Key="Parameter_OutputPhotometric">输出声明：光度模型</system:String>
+    <system:String x:Key="Parameter_OutputReferenceWhite">输出声明：参考白</system:String>
+    <system:String x:Key="Parameter_OutputPeak">输出声明：峰值</system:String>
+    <system:String x:Key="Parameter_OutputRange">输出声明：范围</system:String>
+    <system:String x:Key="Parameter_OutputAlpha">输出声明：Alpha</system:String>
+
 </ResourceDictionary>

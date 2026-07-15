@@ -9,6 +9,9 @@ using System.Numerics;
 using Vortice.Mathematics;
 using System.IO;
 using System.Runtime.InteropServices;
+using BrightEyes.Processing.Execution;
+using BrightEyes.Processing.BuiltIn;
+using System.Collections.Concurrent;
 
 namespace BrightEyes.Renderer
 {
@@ -28,25 +31,14 @@ namespace BrightEyes.Renderer
 
         private ID3D11VertexShader? _vertexShader;
         private ID3D11PixelShader? _pixelShader;
-        private ID3D11PixelShader? _presentPixelShader;
         private ID3D11ShaderResourceView? _hdrShaderResourceView;
         private ColorManagementEffect? _colorManagementEffect;
+        private GpuOscilloscopeEffect? _gpuOscilloscopeEffect;
 
-        private ID3D11SamplerState? _linearClampSampler;
-        private ID3D11SamplerState? _pointClampSampler;
-        private ID3D11Buffer? _scaleConstantBuffer;
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct ScaleConstants
-        {
-            public Vector2 SourceSize;
-            public Vector2 SourceTexelSize;
-        }
 
         // External texture support
         private ID3D11Texture2D? _externalTexture;
         private ID3D11ShaderResourceView? _externalTextureShaderResourceView;
-        private bool _externalTextureIsRec2020PQ = true;
         private ColorSourceMetadata _externalColorMetadata = ColorSourceMetadata.PqRec2020Opaque;
         private bool _externalTextureOwned = false;
 
@@ -67,10 +59,20 @@ namespace BrightEyes.Renderer
         private DisplayColorMetadata _displayColorMetadata = DisplayColorMetadata.SdrFallback;
         private float _sdrReferenceWhiteNits = 100.0f;
         private float _sdrDisplayPeakNits = 100.0f;
+        private float _targetPeakNits = 1000.0f;
+        private ToneMappingMode _toneMappingMode = ToneMappingMode.ColorCorrectV1;
+        private GamutMappingMode _gamutMappingMode = GamutMappingMode.PerceptualCompress;
+        private bool _applyHlgOotf = true;
+        private readonly ConcurrentQueue<AnalysisRequest> _analysisRequests = new();
+        private AnalysisRequest? _activeAnalysisRequest;
+
+        private sealed record AnalysisRequest(
+            int SampleRatePercent,
+            OscilloscopeKind Kind,
+            OscilloscopeChannel Channel,
+            Action<float[]> Callback);
         private Vector4 _sdrBackgroundEncoded = new Vector4(0.9725f, 0.9804f, 0.9961f, 1.0f);
         private Vector4 _hdrBackgroundEncoded = new Vector4(0.58f, 0.59f, 0.62f, 1.0f);
-        private int _scaleSourceWidth = -1;
-        private int _scaleSourceHeight = -1;
 
         public RendererD3D11(IntPtr windowHandle, int width, int height)
         {
@@ -82,6 +84,8 @@ namespace BrightEyes.Renderer
         public DisplayColorMetadata DisplayColorMetadata => _displayColorMetadata;
 
         public bool IsHdrOutput => _isHdrOutput;
+        public bool IsAnalysisAvailable => _gpuOscilloscopeEffect is not null;
+        public event Action<string>? DiagnosticRaised;
 
         private const uint MonitorDefaultToNearest = 2;
 
@@ -188,7 +192,6 @@ namespace BrightEyes.Renderer
                 string baseDirectory = AppContext.BaseDirectory;
                 string vsPath = Path.Combine(baseDirectory, "Renderer/Shaders/FullScreenVS.hlsl");
                 string psPath = Path.Combine(baseDirectory, "Renderer/Shaders/HDRWhitePS.hlsl");
-                string presentPsPath = Path.Combine(baseDirectory, "Renderer/Shaders/PresentPS.hlsl");
 
                var vertexShaderByteCode = Compiler.CompileFromFile(vsPath, "main", "vs_5_0");
                _vertexShader = _device.CreateVertexShader(vertexShaderByteCode.Span);
@@ -196,43 +199,17 @@ namespace BrightEyes.Renderer
                var pixelShaderByteCode = Compiler.CompileFromFile(psPath, "main", "ps_5_0");
                _pixelShader = _device.CreatePixelShader(pixelShaderByteCode.Span);
 
-                var presentPsByteCode = Compiler.CompileFromFile(presentPsPath, "main", "ps_5_0");
-                _presentPixelShader = _device.CreatePixelShader(presentPsByteCode.Span);
-
                _colorManagementEffect = new ColorManagementEffect(_device);
-
-               // Create a default linear clamp sampler for tone-mapped sampling
-               var samplerDesc = new SamplerDescription
+               try
                {
-                   Filter = Filter.MinMagMipLinear,
-                   AddressU = TextureAddressMode.Clamp,
-                   AddressV = TextureAddressMode.Clamp,
-                   AddressW = TextureAddressMode.Clamp
-               };
-               _linearClampSampler = _device.CreateSamplerState(samplerDesc);
-
-               // Linear/anisotropic sampler for bicubic 4-fetch method
-               var pointSamplerDesc = new SamplerDescription
+                   _gpuOscilloscopeEffect = new GpuOscilloscopeEffect(_device);
+               }
+               catch (Exception ex)
                {
-                   Filter = Filter.Anisotropic,
-                   AddressU = TextureAddressMode.Clamp,
-                   AddressV = TextureAddressMode.Clamp,
-                   AddressW = TextureAddressMode.Clamp,
-                   MaxAnisotropy = 8,
-               };
-               _pointClampSampler = _device.CreateSamplerState(pointSamplerDesc);
-
-               // Constant buffer for scaling parameters
-               var cbDesc = new BufferDescription
-               {
-                   ByteWidth = Marshal.SizeOf<ScaleConstants>(),
-                   Usage = ResourceUsage.Dynamic,
-                   BindFlags = BindFlags.ConstantBuffer,
-                   CPUAccessFlags = CpuAccessFlags.Write,
-                   MiscFlags = ResourceOptionFlags.None,
-                   StructureByteStride = 0
-               };
-               _scaleConstantBuffer = _device.CreateBuffer(cbDesc);
+                   string message = "GPU 示波器初始化失败；图像解码与显示仍可用：" + ex.GetBaseException().Message;
+                   Debug.WriteLine(message);
+                   DiagnosticRaised?.Invoke(message);
+               }
            }
             catch (Exception ex)
             {
@@ -323,36 +300,6 @@ namespace BrightEyes.Renderer
             UpdateViewport();
         }
 
-        private void UpdateScaleConstants(int sourceWidth, int sourceHeight)
-        {
-            if (_deviceContext == null || _scaleConstantBuffer == null)
-            {
-                return;
-            }
-            if (_scaleSourceWidth == sourceWidth && _scaleSourceHeight == sourceHeight)
-            {
-                return;
-            }
-
-            var constants = new ScaleConstants
-            {
-                SourceSize = new Vector2(sourceWidth, sourceHeight),
-                SourceTexelSize = new Vector2(sourceWidth > 0 ? 1.0f / sourceWidth : 0.0f, sourceHeight > 0 ? 1.0f / sourceHeight : 0.0f)
-            };
-
-            var mapped = _deviceContext.Map(_scaleConstantBuffer, 0, MapMode.WriteDiscard, Vortice.Direct3D11.MapFlags.None);
-            try
-            {
-                Marshal.StructureToPtr(constants, mapped.DataPointer, false);
-            }
-            finally
-            {
-                _deviceContext.Unmap(_scaleConstantBuffer, 0);
-            }
-            _scaleSourceWidth = sourceWidth;
-            _scaleSourceHeight = sourceHeight;
-        }
-
         public void Start()
         {
             _renderThread = new Thread(RunRenderLoop) { IsBackground = true, Name = "D3DRenderLoop" };
@@ -363,51 +310,41 @@ namespace BrightEyes.Renderer
         {
             while (_isRunning)
             {
-                lock (_lockObject)
+                Action<float[]>? completedCallback = null;
+                float[]? completedValues = null;
+                try
                 {
+                    lock (_lockObject)
+                    {
+                    if (_activeAnalysisRequest != null &&
+                        _gpuOscilloscopeEffect?.TryReadback(_deviceContext, out float[] analysisValues) == true)
+                    {
+                        completedCallback = _activeAnalysisRequest.Callback;
+                        completedValues = analysisValues;
+                        _activeAnalysisRequest = null;
+                    }
                     // Clear backbuffer so letterbox/pillarbox areas use theme background
                     _deviceContext.OMSetRenderTargets(_renderTargetView);
                     _deviceContext.ClearRenderTargetView(_renderTargetView, _isHdrOutput ? _hdrBackgroundColor : _sdrBackgroundColor);
                     if (_externalTextureShaderResourceView != null)
                     {
-                        // External texture path
-                        if (_externalTextureIsRec2020PQ &&
-                            _externalColorMetadata.Alpha == AlphaRepresentation.Opaque &&
-                            _isHdrOutput)
-                        {
-                            // Direct present (pass-through) to swap chain backbuffer.
-                            _deviceContext.OMSetRenderTargets(_renderTargetView);
-                            _deviceContext.VSSetShader(_vertexShader);
-                            _deviceContext.PSSetShader(_presentPixelShader);
-                            _deviceContext.PSSetShaderResources(0, new[] { _externalTextureShaderResourceView });
-                            if (_scaleConstantBuffer != null)
-                            {
-                                UpdateScaleConstants(_sourceWidth, _sourceHeight);
-                                _deviceContext.PSSetConstantBuffers(0, new[] { _scaleConstantBuffer });
-                            }
-                            if (_pointClampSampler != null)
-                            {
-                                _deviceContext.PSSetSamplers(0, new[] { _pointClampSampler });
-                            }
-                            _deviceContext.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
-                            _deviceContext.Draw(3, 0);
-                        }
-                        else
-                        {
-                            // BCM bridge: source -> absolute linear Rec.2020/nits -> terminal encoding.
-                            _colorManagementEffect?.Apply(
-                                _deviceContext,
-                                _externalTextureShaderResourceView,
-                                _renderTargetView,
-                                _sourceWidth,
-                                _sourceHeight,
-                                _externalColorMetadata,
-                                _displayColorMetadata,
-                                _sdrReferenceWhiteNits,
-                                _sdrDisplayPeakNits,
-                                _sdrBackgroundEncoded,
-                                _hdrBackgroundEncoded);
-                        }
+                        // Decode transfer before filtering. The previous direct PQ path
+                        // filtered nonlinear code values and is intentionally not used.
+                        _colorManagementEffect?.Apply(
+                            _deviceContext,
+                            _externalTextureShaderResourceView,
+                            _renderTargetView,
+                            _sourceWidth,
+                            _sourceHeight,
+                            _externalColorMetadata,
+                            EffectiveDisplayMetadata(),
+                            _sdrReferenceWhiteNits,
+                            _sdrDisplayPeakNits,
+                            _toneMappingMode,
+                            _gamutMappingMode,
+                            _applyHlgOotf,
+                            _sdrBackgroundEncoded,
+                            _hdrBackgroundEncoded);
                     }
                     else
                     {
@@ -430,15 +367,56 @@ namespace BrightEyes.Renderer
                             _displayColorMetadata,
                             _sdrReferenceWhiteNits,
                             _sdrDisplayPeakNits,
+                            _toneMappingMode,
+                            _gamutMappingMode,
+                            _applyHlgOotf,
                             _sdrBackgroundEncoded,
                             _hdrBackgroundEncoded);
                     }
 
+                    if (_gpuOscilloscopeEffect is not null &&
+                        _activeAnalysisRequest == null &&
+                        _externalTextureShaderResourceView != null &&
+                        _analysisRequests.TryDequeue(out AnalysisRequest? request))
+                    {
+                        _gpuOscilloscopeEffect?.Dispatch(
+                            _deviceContext,
+                            _externalTextureShaderResourceView,
+                            _sourceWidth,
+                            _sourceHeight,
+                            request.SampleRatePercent,
+                            request.Kind,
+                            request.Channel,
+                            _externalColorMetadata);
+                        _activeAnalysisRequest = request;
+                    }
+
                     // Step F: Present the final result to the screen
-                    _swapChain.Present(1, 0);
-               }
+                        _swapChain.Present(1, 0);
+                    }
+                    if (completedCallback != null && completedValues != null)
+                        completedCallback(completedValues);
+                }
+                catch (Exception ex)
+                {
+                    string message = "D3D11 过程执行失败；渲染线程继续运行并保留最后有效画面：" + ex.GetBaseException().Message;
+                    Debug.WriteLine(message);
+                    DiagnosticRaised?.Invoke(message);
+                }
                 Thread.Sleep(10);
             }
+        }
+
+        public bool RequestAnalysis(
+            int sampleRatePercent,
+            OscilloscopeKind kind,
+            OscilloscopeChannel channel,
+            Action<float[]> callback)
+        {
+            ArgumentNullException.ThrowIfNull(callback);
+            if (_gpuOscilloscopeEffect is null) return false;
+            _analysisRequests.Enqueue(new(Math.Clamp(sampleRatePercent, 1, 100), kind, channel, callback));
+            return true;
         }
 
         /// <summary>
@@ -470,8 +448,6 @@ namespace BrightEyes.Renderer
 
                 _externalTexture = texture; // Borrowed: do not Dispose on Clear/Dispose
                 _externalColorMetadata = colorMetadata.Normalize();
-                _externalTextureIsRec2020PQ = _externalColorMetadata.Transfer == ColorTransferFunction.Pq &&
-                                               _externalColorMetadata.Primaries == ColorPrimaries.Rec2020;
                 _externalTextureShaderResourceView = _device.CreateShaderResourceView(texture);
                 _externalTextureOwned = false;
 
@@ -511,8 +487,6 @@ namespace BrightEyes.Renderer
                 var openedTexture = _device.OpenSharedResource<ID3D11Texture2D>(sharedHandle);
                 _externalTexture = openedTexture; // Owned by renderer
                 _externalColorMetadata = colorMetadata.Normalize();
-                _externalTextureIsRec2020PQ = _externalColorMetadata.Transfer == ColorTransferFunction.Pq &&
-                                               _externalColorMetadata.Primaries == ColorPrimaries.Rec2020;
                 _externalTextureShaderResourceView = _device.CreateShaderResourceView(openedTexture);
                 _externalTextureOwned = true;
 
@@ -539,7 +513,6 @@ namespace BrightEyes.Renderer
                 _externalTexture = null;
                 _externalTextureOwned = false;
                 _externalColorMetadata = ColorSourceMetadata.Sdr;
-                _externalTextureIsRec2020PQ = false;
 
                 // Reset to full-area viewport when no external content
                 _sourceWidth = 0;
@@ -593,19 +566,20 @@ namespace BrightEyes.Renderer
 
             lock (_lockObject)
             {
-                // Create texture with full mip-chain and enable auto-gen mips
+                // Decode neighboring texels before filtering; never build mips
+                // from nonlinear encoded source values.
                 var desc = new Texture2DDescription
                 {
                     Width = width,
                     Height = height,
-                    MipLevels = 0, // full chain
+                    MipLevels = 1,
                     ArraySize = 1,
                     Format = Format.R32G32B32A32_Float,
                     SampleDescription = new SampleDescription(1, 0),
                     Usage = ResourceUsage.Default,
-                    BindFlags = BindFlags.ShaderResource | BindFlags.RenderTarget,
+                    BindFlags = BindFlags.ShaderResource,
                     CPUAccessFlags = CpuAccessFlags.None,
-                    MiscFlags = ResourceOptionFlags.GenerateMips
+                    MiscFlags = ResourceOptionFlags.None
                 };
 
                 var newTexture = _device.CreateTexture2D(desc);
@@ -634,15 +608,7 @@ namespace BrightEyes.Renderer
                 _externalTexture = newTexture;
                 _externalTextureOwned = true;
                 _externalColorMetadata = colorMetadata.Normalize();
-                _externalTextureIsRec2020PQ = _externalColorMetadata.Transfer == ColorTransferFunction.Pq &&
-                                               _externalColorMetadata.Primaries == ColorPrimaries.Rec2020;
                 _externalTextureShaderResourceView = _device.CreateShaderResourceView(_externalTexture);
-
-                // Generate mipmaps for better minification quality
-                if (_deviceContext != null && _externalTextureShaderResourceView != null)
-                {
-                    _deviceContext.GenerateMips(_externalTextureShaderResourceView);
-                }
 
                 _sourceWidth = width;
                 _sourceHeight = height;
@@ -650,25 +616,45 @@ namespace BrightEyes.Renderer
             }
         }
 
-        /// <summary>
-        /// Uploads PhotoSauce's normalized BGRA8 output to the existing tone-mapping pipeline.
-        /// This avoids the large CPU-side RGBA32F expansion used by HDR sources.
-        /// </summary>
-        public void SetExternalTextureFromBgra32(byte[] bgra, int width, int height)
+        public void UploadDecodedFrame(DecodedImageFrame frame)
         {
-            SetExternalTextureFromBgra32(bgra, width, height, ColorSourceMetadata.Sdr);
+            if (frame.Storage == DecodedPixelStorage.Rgba8)
+            {
+                SetExternalTextureFromRgba8(
+                    frame.Rgba8 ?? throw new InvalidDataException("Decoded RGBA8 frame has no pixel buffer."),
+                    frame.Width,
+                    frame.Height,
+                    frame.EncodedColorMetadata);
+            }
+            else
+            {
+                SetExternalTextureFromRgba32f(
+                    frame.Rgba32Float ?? throw new InvalidDataException("Decoded RGBA32F frame has no pixel buffer."),
+                    frame.Width,
+                    frame.Height,
+                    frame.EncodedColorMetadata);
+            }
         }
 
-        public void SetExternalTextureFromBgra32(
-            byte[] bgra,
+        /// <summary>
+        /// Uploads normalized RGBA8 output to the existing tone-mapping pipeline.
+        /// PhotoSauce's native BGRA layout is converted before it reaches this boundary.
+        /// </summary>
+        public void SetExternalTextureFromRgba8(byte[] rgba, int width, int height)
+        {
+            SetExternalTextureFromRgba8(rgba, width, height, ColorSourceMetadata.Sdr);
+        }
+
+        public void SetExternalTextureFromRgba8(
+            byte[] rgba,
             int width,
             int height,
             ColorSourceMetadata colorMetadata)
         {
             if (_device == null) throw new InvalidOperationException("Renderer not initialized.");
-            if (bgra == null) throw new ArgumentNullException(nameof(bgra));
+            if (rgba == null) throw new ArgumentNullException(nameof(rgba));
             int rowPitch = checked(width * 4);
-            if (width <= 0 || height <= 0 || bgra.Length < checked(rowPitch * height)) throw new ArgumentException("Invalid BGRA image buffer.", nameof(bgra));
+            if (width <= 0 || height <= 0 || rgba.Length != checked(rowPitch * height)) throw new ArgumentException("Invalid RGBA8 image buffer.", nameof(rgba));
 
             lock (_lockObject)
             {
@@ -676,23 +662,22 @@ namespace BrightEyes.Renderer
                 {
                     Width = width,
                     Height = height,
-                    MipLevels = 0,
+                    MipLevels = 1,
                     ArraySize = 1,
-                    Format = Format.B8G8R8A8_UNorm,
+                    Format = Format.R8G8B8A8_UNorm,
                     SampleDescription = new SampleDescription(1, 0),
                     Usage = ResourceUsage.Default,
-                    BindFlags = BindFlags.ShaderResource | BindFlags.RenderTarget,
-                    MiscFlags = ResourceOptionFlags.GenerateMips
+                    BindFlags = BindFlags.ShaderResource,
+                    MiscFlags = ResourceOptionFlags.None
                 };
                 var texture = _device.CreateTexture2D(desc);
-                var handle = GCHandle.Alloc(bgra, GCHandleType.Pinned);
+                var handle = GCHandle.Alloc(rgba, GCHandleType.Pinned);
                 try
                 {
                     _deviceContext!.UpdateSubresource(new MappedSubresource(handle.AddrOfPinnedObject(), rowPitch, 0), texture, 0);
                 }
                 finally { handle.Free(); }
                 ReplaceExternalTexture(texture, colorMetadata);
-                _deviceContext!.GenerateMips(_externalTextureShaderResourceView!);
                 _sourceWidth = width;
                 _sourceHeight = height;
                 UpdateViewport();
@@ -706,8 +691,6 @@ namespace BrightEyes.Renderer
             _externalTexture = texture;
             _externalTextureOwned = true;
             _externalColorMetadata = colorMetadata.Normalize();
-            _externalTextureIsRec2020PQ = _externalColorMetadata.Transfer == ColorTransferFunction.Pq &&
-                                           _externalColorMetadata.Primaries == ColorPrimaries.Rec2020;
             _externalTextureShaderResourceView = _device!.CreateShaderResourceView(texture);
         }
 
@@ -722,11 +705,8 @@ namespace BrightEyes.Renderer
            _hdrShaderResourceView?.Dispose();
            _vertexShader?.Dispose();
            _pixelShader?.Dispose();
-           _presentPixelShader?.Dispose();
             _colorManagementEffect?.Dispose();
-           _linearClampSampler?.Dispose();
-           _pointClampSampler?.Dispose();
-           _scaleConstantBuffer?.Dispose();
+           _gpuOscilloscopeEffect?.Dispose();
            _externalTextureShaderResourceView?.Dispose();
            if (_externalTextureOwned)
            {
@@ -806,8 +786,8 @@ namespace BrightEyes.Renderer
         }
 
         /// <summary>
-        /// Sets the two SDR calibration values used when the active output is
-        /// SDR. They are ignored by the bridge while HDR output is active.
+        /// Sets the SDR reference white used by both HDR and SDR outputs and
+        /// the display peak used by the SDR output.
         /// </summary>
         public void SetSdrCalibration(float referenceWhiteNits, float displayPeakNits)
         {
@@ -816,6 +796,35 @@ namespace BrightEyes.Renderer
                 _sdrReferenceWhiteNits = NormalizePositive(referenceWhiteNits, 100.0f);
                 _sdrDisplayPeakNits = NormalizePositive(displayPeakNits, 100.0f);
             }
+        }
+
+        public void SetTargetPeak(float targetPeakNits)
+        {
+            lock (_lockObject)
+            {
+                _targetPeakNits = NormalizePositive(targetPeakNits, _displayColorMetadata.EffectivePeakNits);
+            }
+        }
+
+        public void SetRenderMapping(ToneMappingMode toneMapping, GamutMappingMode gamutMapping, bool applyHlgOotf)
+        {
+            lock (_lockObject)
+            {
+                _toneMappingMode = toneMapping;
+                _gamutMappingMode = gamutMapping;
+                _applyHlgOotf = applyHlgOotf;
+            }
+        }
+
+        private DisplayColorMetadata EffectiveDisplayMetadata()
+        {
+            if (!_displayColorMetadata.IsHdr) return _displayColorMetadata;
+            float peak = NormalizePositive(_targetPeakNits, _displayColorMetadata.EffectivePeakNits);
+            return _displayColorMetadata with
+            {
+                MaxLuminanceNits = peak,
+                MaxFullFrameLuminanceNits = peak
+            };
         }
 
         private static float NormalizePositive(float value, float fallback) =>
