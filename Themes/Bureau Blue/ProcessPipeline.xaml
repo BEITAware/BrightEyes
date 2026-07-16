@@ -196,7 +196,7 @@
                         </Trigger>
                         <Trigger Property="Tag" Value="DropTargetBeforeWarning">
                             <Setter TargetName="DropBefore" Property="Visibility" Value="Visible" />
-                            <Setter TargetName="DropBefore" Property="Background" Value="{StaticResource ProcessDropWarningSurfaceBrush}" />
+                            <Setter TargetName="DropBefore" Property="Background" Value="{DynamicResource ProcessDropWarningSurfaceBrush}" />
                             <Setter TargetName="DropBefore" Property="BorderBrush" Value="#A86D12" />
                             <Setter TargetName="DropBeforeIcon" Property="BorderBrush" Value="#C28A32" />
                             <Setter TargetName="DropBeforeArrow" Property="Foreground" Value="#84510A" />
@@ -204,7 +204,7 @@
                         </Trigger>
                         <Trigger Property="Tag" Value="DropTargetAfterWarning">
                             <Setter TargetName="DropAfter" Property="Visibility" Value="Visible" />
-                            <Setter TargetName="DropAfter" Property="Background" Value="{StaticResource ProcessDropWarningSurfaceBrush}" />
+                            <Setter TargetName="DropAfter" Property="Background" Value="{DynamicResource ProcessDropWarningSurfaceBrush}" />
                             <Setter TargetName="DropAfter" Property="BorderBrush" Value="#A86D12" />
                             <Setter TargetName="DropAfterIcon" Property="BorderBrush" Value="#C28A32" />
                             <Setter TargetName="DropAfterArrow" Property="Foreground" Value="#84510A" />
@@ -365,12 +365,12 @@
                 <Setter TargetName="WarningOverlay" Property="Visibility" Value="Visible" />
             </DataTrigger>
             <DataTrigger Binding="{Binding IncomingConnectionSeverity}" Value="HardError">
-                <Setter TargetName="ConnectionLine" Property="Background" Value="{StaticResource ErrorConnectionLaneBrush}" />
-                <Setter TargetName="ConnectionLane" Property="Background" Value="{StaticResource ErrorConnectionBrush}" />
-                <Setter TargetName="ConnectionLabel" Property="BorderBrush" Value="{StaticResource ErrorConnectionBrush}" />
-                <Setter TargetName="ConnectionLabel" Property="Background" Value="{StaticResource ErrorConnectionLabelBrush}" />
-                <Setter TargetName="ConnectionLabelText" Property="Foreground" Value="{StaticResource ErrorConnectionBrush}" />
-                <Setter TargetName="ProcessBlock" Property="BorderBrush" Value="{StaticResource ErrorConnectionBrush}" />
+                <Setter TargetName="ConnectionLine" Property="Background" Value="{DynamicResource ErrorConnectionLaneBrush}" />
+                <Setter TargetName="ConnectionLane" Property="Background" Value="{DynamicResource ErrorConnectionBrush}" />
+                <Setter TargetName="ConnectionLabel" Property="BorderBrush" Value="{DynamicResource ErrorConnectionBrush}" />
+                <Setter TargetName="ConnectionLabel" Property="Background" Value="{DynamicResource ErrorConnectionLabelBrush}" />
+                <Setter TargetName="ConnectionLabelText" Property="Foreground" Value="{DynamicResource ErrorConnectionBrush}" />
+                <Setter TargetName="ProcessBlock" Property="BorderBrush" Value="{DynamicResource ErrorConnectionBrush}" />
             </DataTrigger>
             <DataTrigger Binding="{Binding State}" Value="Pending">
                 <Setter TargetName="StateBadge" Property="Background" Value="{DynamicResource ProcessBadgeBlueBrush}" />
@@ -431,7 +431,13 @@
     </DataTemplate>
 
     <DataTemplate x:Key="EnumParameterTemplate">
-        <ComboBox ItemsSource="{Binding EnumValues}" SelectedItem="{Binding SelectedEnumValue, Mode=TwoWay}" />
+        <ComboBox ItemsSource="{Binding EnumValues}" SelectedItem="{Binding SelectedEnumValue, Mode=TwoWay}">
+            <ComboBox.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding Converter={StaticResource EnumDescriptionConverter}}" />
+                </DataTemplate>
+            </ComboBox.ItemTemplate>
+        </ComboBox>
     </DataTemplate>
 
     <DataTemplate x:Key="BooleanParameterTemplate">
@@ -465,7 +471,7 @@
                     <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding AutomaticText}" FontSize="10" Margin="8,0,0,0" TextWrapping="Wrap" />
                 </Grid>
                 <TextBlock Text="{Binding AutomaticSource, StringFormat=来源：{0}}" FontSize="10" Foreground="{DynamicResource ProcessMutedTextBrush}" TextWrapping="Wrap" />
-                <TextBlock Text="{Binding ValidationError}" FontSize="10" Foreground="{StaticResource ErrorConnectionBrush}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding ValidationError}" FontSize="10" Foreground="{DynamicResource ErrorConnectionBrush}" TextWrapping="Wrap" />
             </StackPanel>
         </Border>
         <DataTemplate.Triggers>
@@ -495,7 +501,7 @@
             <StackPanel Grid.Column="1">
                 <TextBlock Text="{Binding Value}" TextWrapping="Wrap" FontSize="11" />
                 <TextBlock Text="{Binding Source, StringFormat={}{0}}" TextWrapping="Wrap" FontSize="9" Foreground="{DynamicResource ProcessMutedTextBrush}" />
-                <TextBlock Text="{Binding Conflict}" TextWrapping="Wrap" FontSize="9" Foreground="{StaticResource WarningConnectionBrush}" />
+                <TextBlock Text="{Binding Conflict}" TextWrapping="Wrap" FontSize="9" Foreground="{DynamicResource WarningConnectionBrush}" />
             </StackPanel>
         </Grid>
     </DataTemplate>

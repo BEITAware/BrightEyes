@@ -72,6 +72,7 @@ namespace BrightEyes.Renderer
         private float _targetPeakNits = 1000.0f;
         private ToneMappingMode _toneMappingMode = ToneMappingMode.ColorCorrectV1;
         private GamutMappingMode _gamutMappingMode = GamutMappingMode.PerceptualCompress;
+        private ViewInterpolationMode _viewInterpolationMode = ViewInterpolationMode.BrightEyesBilinear;
         private bool _applyHlgOotf = true;
         private readonly ConcurrentQueue<AnalysisRequest> _analysisRequests = new();
         private readonly Queue<AnalysisRequest> _submittedAnalysisRequests = new();
@@ -343,8 +344,8 @@ namespace BrightEyes.Renderer
                     _deviceContext.ClearRenderTargetView(_renderTargetView, _isHdrOutput ? _hdrBackgroundColor : _sdrBackgroundColor);
                     if (_externalTextureShaderResourceView != null)
                     {
-                        // Decode transfer before filtering. The previous direct PQ path
-                        // filtered nonlinear code values and is intentionally not used.
+                        // The terminal bridge owns both color conversion and the selected
+                        // view interpolation mode. BrightEyes Bilinear remains the default.
                         _colorManagementEffect?.Apply(
                             _deviceContext,
                             _externalTextureShaderResourceView,
@@ -357,6 +358,7 @@ namespace BrightEyes.Renderer
                             _sdrDisplayPeakNits,
                             _toneMappingMode,
                             _gamutMappingMode,
+                            _viewInterpolationMode,
                             _applyHlgOotf,
                             _externalRequiresHlgOotf,
                             _sdrBackgroundEncoded,
@@ -385,6 +387,7 @@ namespace BrightEyes.Renderer
                             _sdrDisplayPeakNits,
                             _toneMappingMode,
                             _gamutMappingMode,
+                            _viewInterpolationMode,
                             _applyHlgOotf,
                             false,
                             _sdrBackgroundEncoded,
@@ -1098,13 +1101,18 @@ namespace BrightEyes.Renderer
             }
         }
 
-        public void SetRenderMapping(ToneMappingMode toneMapping, GamutMappingMode gamutMapping, bool applyHlgOotf)
+        public void SetRenderMapping(
+            ToneMappingMode toneMapping,
+            GamutMappingMode gamutMapping,
+            bool applyHlgOotf,
+            ViewInterpolationMode interpolationMode)
         {
             lock (_lockObject)
             {
                 _toneMappingMode = toneMapping;
                 _gamutMappingMode = gamutMapping;
                 _applyHlgOotf = applyHlgOotf;
+                _viewInterpolationMode = interpolationMode;
             }
         }
 

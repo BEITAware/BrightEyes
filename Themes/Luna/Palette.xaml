@@ -1,0 +1,293 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Saturated candy colors and hard specular bands evoke translucent, molded
+         Y2K plastic while keeping text contrast suitable for an editor. -->
+    <Color x:Key="LunaCobaltColor">#1746B7</Color>
+    <Color x:Key="LunaBlueColor">#2587E8</Color>
+    <Color x:Key="LunaCyanColor">#13B7D3</Color>
+    <Color x:Key="LunaGreenColor">#72BC22</Color>
+    <Color x:Key="LunaLavenderColor">#A497E5</Color>
+    <Color x:Key="LunaOrangeColor">#F38A1B</Color>
+
+    <LinearGradientBrush x:Key="LunaPanelSurfaceBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FCFEFF" Offset="0" />
+        <GradientStop Color="#EEF8FF" Offset="0.42" />
+        <GradientStop Color="#D9E9FF" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="LunaBluePlasticBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#94E8FF" Offset="0" />
+        <GradientStop Color="#39B8F3" Offset="0.22" />
+        <GradientStop Color="#167EDB" Offset="0.48" />
+        <GradientStop Color="#0750C3" Offset="0.52" />
+        <GradientStop Color="#279CF0" Offset="0.84" />
+        <GradientStop Color="#0D53C7" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="LunaGreenPlasticBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#E8FF9A" Offset="0" />
+        <GradientStop Color="#A8E344" Offset="0.24" />
+        <GradientStop Color="#65B51C" Offset="0.5" />
+        <GradientStop Color="#3D8F0B" Offset="0.54" />
+        <GradientStop Color="#82D627" Offset="0.84" />
+        <GradientStop Color="#3A850B" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="LunaLavenderPlasticBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FAF5FF" Offset="0" />
+        <GradientStop Color="#D9CCFF" Offset="0.3" />
+        <GradientStop Color="#A797E9" Offset="0.52" />
+        <GradientStop Color="#C7B9F6" Offset="0.82" />
+        <GradientStop Color="#8B78D1" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="LunaSilverPlasticBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#F5FBFF" Offset="0.38" />
+        <GradientStop Color="#CFDDEE" Offset="0.49" />
+        <GradientStop Color="#AFC4DC" Offset="0.53" />
+        <GradientStop Color="#E7F1FA" Offset="1" />
+    </LinearGradientBrush>
+
+    <!-- Names shared by MainWindow and the Bureau pipeline template. -->
+    <LinearGradientBrush x:Key="WindowSurfaceBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#DDF7FF" Offset="0" />
+        <GradientStop Color="#C8E5F8" Offset="0.5" />
+        <GradientStop Color="#D9D7F6" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DocumentBarBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#F9FEFF" Offset="0" />
+        <GradientStop Color="#C8F1FB" Offset="0.34" />
+        <GradientStop Color="#83D5E8" Offset="0.5" />
+        <GradientStop Color="#B7EAF3" Offset="1" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="ApplicationChromeBorderBrush" Color="#1A6FC3" />
+    <SolidColorBrush x:Key="ApplicationMutedTextBrush" Color="#315B77" />
+    <SolidColorBrush x:Key="InspectorDividerBrush" Color="#91B9D8" />
+    <SolidColorBrush x:Key="AnalysisBorderBrush" Color="#2469BC" />
+    <LinearGradientBrush x:Key="WorkspaceSplitterBrush" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#2B75C8" Offset="0" />
+        <GradientStop Color="#A9EBF5" Offset="0.46" />
+        <GradientStop Color="#1D65B9" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="PreviewSurfaceBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#ECF8FF" Offset="0.72" />
+        <GradientStop Color="#D9E6FA" Offset="1" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="HighlightEdgeBrush" Color="#EFFFFFFF" />
+    <SolidColorBrush x:Key="PipelineSurfaceBrush" Color="#F9FDFF" />
+    <SolidColorBrush x:Key="PipelineSurfaceBorderBrush" Color="#286DB8" />
+    <SolidColorBrush x:Key="PipelineAllowedBorderBrush" Color="#42A60B" />
+    <SolidColorBrush x:Key="PipelineDeniedSurfaceBrush" Color="#FFF0F2" />
+    <SolidColorBrush x:Key="PipelineDeniedBorderBrush" Color="#C52B49" />
+    <SolidColorBrush x:Key="PipelineWarningBorderBrush" Color="#E0790B" />
+    <SolidColorBrush x:Key="PipelinePlaceholderTextBrush" Color="#547894" />
+    <SolidColorBrush x:Key="PipelineStatusBorderBrush" Color="#1763B6" />
+    <SolidColorBrush x:Key="PipelineStatusTextBrush" Color="#123D70" />
+    <SolidColorBrush x:Key="ApplicationPrimaryTextBrush" Color="#102C57" />
+    <LinearGradientBrush x:Key="StatusBarBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#67C8F2" Offset="0" />
+        <GradientStop Color="#167DD7" Offset="0.16" />
+        <GradientStop Color="#0752B8" Offset="0.55" />
+        <GradientStop Color="#1787DB" Offset="1" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="StatusBarTextBrush" Color="#FFFFFF" />
+    <CornerRadius x:Key="ApplicationPanelCornerRadius">9</CornerRadius>
+    <Thickness x:Key="ApplicationPanelBorderThickness">2</Thickness>
+    <!-- HWND-backed preview content cannot participate in WPF corner clipping.
+         Luna therefore uses a square, chunky frame instead of simulated curves. -->
+    <CornerRadius x:Key="PreviewPanelCornerRadius">0</CornerRadius>
+    <Thickness x:Key="PreviewPanelBorderThickness">3</Thickness>
+
+    <LinearGradientBrush x:Key="BureauHeaderBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#F8FFFF" Offset="0" />
+        <GradientStop Color="#A9F0FC" Offset="0.27" />
+        <GradientStop Color="#45BEDC" Offset="0.48" />
+        <GradientStop Color="#1389C2" Offset="0.52" />
+        <GradientStop Color="#75D7E9" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="BureauStatusBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#E2F7FF" Offset="0.42" />
+        <GradientStop Color="#B5D8EE" Offset="0.5" />
+        <GradientStop Color="#D5ECF8" Offset="1" />
+    </LinearGradientBrush>
+    <DrawingBrush x:Key="BureauHeaderTextureBrush" TileMode="Tile"
+                  Viewport="0,0,6,6" ViewportUnits="Absolute"
+                  Viewbox="0,0,6,6" ViewboxUnits="Absolute">
+        <DrawingBrush.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="#35FFFFFF" Geometry="M0,0 H6 V1 H0 Z" />
+                <GeometryDrawing Brush="#12004A80" Geometry="M0,5 H6 V6 H0 Z" />
+                <GeometryDrawing Brush="#24FFFFFF" Geometry="M1,2 H2 V3 H1 Z M4,3 H5 V4 H4 Z" />
+            </DrawingGroup>
+        </DrawingBrush.Drawing>
+    </DrawingBrush>
+    <SolidColorBrush x:Key="BureauHeaderBorderBrush" Color="#1459A3" />
+    <SolidColorBrush x:Key="BureauHeaderSeparatorBrush" Color="#2385B6" />
+    <SolidColorBrush x:Key="BureauHeaderTextBrush" Color="#073B68" />
+
+    <!-- These familiar keys are also consumed by the custom group and ribbon chrome. -->
+    <LinearGradientBrush x:Key="AeroBlueGradientBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#F7FFFF" Offset="0" />
+        <GradientStop Color="#B9EFF9" Offset="0.3" />
+        <GradientStop Color="#6BC8EA" Offset="0.68" />
+        <GradientStop Color="#3A9FD7" Offset="1" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="AeroBorderBrush" Color="#1B62B3" />
+    <SolidColorBrush x:Key="AeroDisabledBorderBrush" Color="#98A9B9" />
+    <SolidColorBrush x:Key="AeroDisabledBackgroundBrush" Color="#DDE3E8" />
+    <SolidColorBrush x:Key="AeroTextBrush" Color="#0D3764" />
+    <SolidColorBrush x:Key="AeroDisabledTextBrush" Color="#748491" />
+    <LinearGradientBrush x:Key="AeroButtonNormalBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#DFF7FF" Offset="0.46" />
+        <GradientStop Color="#8ED3F4" Offset="0.5" />
+        <GradientStop Color="#C4EBFC" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="AeroButtonHoverBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFE9" Offset="0" />
+        <GradientStop Color="#FFE375" Offset="0.46" />
+        <GradientStop Color="#FF9A23" Offset="0.52" />
+        <GradientStop Color="#FFC34D" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="AeroButtonPressedBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#D9FCA9" Offset="0" />
+        <GradientStop Color="#8CD934" Offset="0.48" />
+        <GradientStop Color="#4B9E0C" Offset="0.54" />
+        <GradientStop Color="#75C827" Offset="1" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="AeroButtonNormalBorderBrush" Color="#1B65BB" />
+    <SolidColorBrush x:Key="AeroButtonHoverBorderBrush" Color="#D87006" />
+    <SolidColorBrush x:Key="AeroButtonPressedBorderBrush" Color="#397F08" />
+    <LinearGradientBrush x:Key="AeroButtonHighlightBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#EFFFFFFF" Offset="0" />
+        <GradientStop Color="#00FFFFFF" Offset="1" />
+    </LinearGradientBrush>
+
+    <!-- Pipeline-specific plastics. -->
+    <LinearGradientBrush x:Key="ProcessSurfaceBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#F4FBFF" Offset="0.7" />
+        <GradientStop Color="#E2F0FA" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessSelectedBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFF5" Offset="0" />
+        <GradientStop Color="#F5FFB8" Offset="0.44" />
+        <GradientStop Color="#BCEB55" Offset="0.5" />
+        <GradientStop Color="#E3F898" Offset="1" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="ProcessBorderBrush" Color="#5C8FBA" />
+    <SolidColorBrush x:Key="ProcessDisabledBrush" Color="#DCE5EC" />
+    <SolidColorBrush x:Key="ProcessTextBrush" Color="#102B51" />
+    <SolidColorBrush x:Key="ProcessMutedTextBrush" Color="#41647F" />
+    <LinearGradientBrush x:Key="ProcessDropSurfaceBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#DFF8FF" Offset="0.42" />
+        <GradientStop Color="#7ED8EB" Offset="0.5" />
+        <GradientStop Color="#BBEEF6" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessDropWarningSurfaceBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFDEB" Offset="0" />
+        <GradientStop Color="#FFE680" Offset="0.46" />
+        <GradientStop Color="#F39A20" Offset="0.52" />
+        <GradientStop Color="#FFD05D" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessDropAreaAllowedBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#F7FFF4" Offset="0" />
+        <GradientStop Color="#D7F6AE" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessDropAreaWarningBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFDF2" Offset="0" />
+        <GradientStop Color="#FFE6A1" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="RawConnectionBrush" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#087C93" Offset="0" />
+        <GradientStop Color="#D9FFFF" Offset="0.22" />
+        <GradientStop Color="#25D2DC" Offset="0.43" />
+        <GradientStop Color="#0095B5" Offset="0.75" />
+        <GradientStop Color="#075B72" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="IntermediateConnectionBrush" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#51409C" Offset="0" />
+        <GradientStop Color="#F0ECFF" Offset="0.22" />
+        <GradientStop Color="#AC94F1" Offset="0.43" />
+        <GradientStop Color="#7158C8" Offset="0.75" />
+        <GradientStop Color="#44328D" Offset="1" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="RawConnectionBorderBrush" Color="#08778E" />
+    <SolidColorBrush x:Key="IntermediateConnectionBorderBrush" Color="#5C48AA" />
+    <SolidColorBrush x:Key="RawConnectionTextBrush" Color="#0B6170" />
+    <SolidColorBrush x:Key="IntermediateConnectionTextBrush" Color="#594493" />
+    <LinearGradientBrush x:Key="RawConnectionLabelBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#D5FAFC" Offset="0.47" />
+        <GradientStop Color="#82D6E0" Offset="0.52" />
+        <GradientStop Color="#C8F4F7" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="IntermediateConnectionLabelBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#F0EBFF" Offset="0.47" />
+        <GradientStop Color="#BBAAEF" Offset="0.52" />
+        <GradientStop Color="#E3DBFA" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ErrorConnectionLaneBrush" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#8E1832" Offset="0" />
+        <GradientStop Color="#FFE2E8" Offset="0.22" />
+        <GradientStop Color="#EF6682" Offset="0.43" />
+        <GradientStop Color="#C92E51" Offset="0.76" />
+        <GradientStop Color="#81132C" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ErrorConnectionLabelBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#FFE6EC" Offset="0.47" />
+        <GradientStop Color="#EFA4B3" Offset="0.52" />
+        <GradientStop Color="#F9D6DD" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessStatusColumnBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#EEF8FF" Offset="0.47" />
+        <GradientStop Color="#B6CCE0" Offset="0.52" />
+        <GradientStop Color="#DFEBF4" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessGripColumnBrush" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#74BFE6" Offset="0" />
+        <GradientStop Color="#E8FFFF" Offset="0.42" />
+        <GradientStop Color="#3596D2" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessBadgeNeutralBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#EAF5FD" Offset="0.46" />
+        <GradientStop Color="#AFC5D8" Offset="0.51" />
+        <GradientStop Color="#DDEBF5" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessBadgeBlueBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#CDEEFF" Offset="0.46" />
+        <GradientStop Color="#54ADEC" Offset="0.51" />
+        <GradientStop Color="#A8D8F8" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessBadgeGreenBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#E5FBC2" Offset="0.46" />
+        <GradientStop Color="#75BE27" Offset="0.51" />
+        <GradientStop Color="#C4EA83" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessBadgeAmberBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#FFF3BC" Offset="0.46" />
+        <GradientStop Color="#EB9B25" Offset="0.51" />
+        <GradientStop Color="#FFD875" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessBadgeRedBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#FFDDE5" Offset="0.46" />
+        <GradientStop Color="#D94E6A" Offset="0.51" />
+        <GradientStop Color="#F5A9B8" Offset="1" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="ProcessBadgeHighlightBrush" Color="#DFFFFFFF" />
+    <SolidColorBrush x:Key="ProcessBadgeNeutralBorderBrush" Color="#668EAF" />
+    <SolidColorBrush x:Key="ProcessBadgeBlueBorderBrush" Color="#227AC3" />
+    <SolidColorBrush x:Key="ProcessBadgeGreenBorderBrush" Color="#4A920F" />
+    <SolidColorBrush x:Key="ProcessBadgeAmberBorderBrush" Color="#C6730C" />
+    <SolidColorBrush x:Key="ProcessBadgeRedBorderBrush" Color="#B22647" />
+    <SolidColorBrush x:Key="WarningConnectionBrush" Color="#DD7108" />
+    <SolidColorBrush x:Key="ErrorConnectionBrush" Color="#C5264A" />
+</ResourceDictionary>

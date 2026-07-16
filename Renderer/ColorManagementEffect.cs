@@ -19,6 +19,7 @@ public sealed class ColorManagementEffect : IDisposable
     private readonly ID3D11VertexShader _vertexShader;
     private readonly ID3D11PixelShader _pixelShader;
     private readonly ID3D11SamplerState _pointSampler;
+    private readonly ID3D11SamplerState _linearSampler;
     private readonly ID3D11Buffer _constantBuffer;
     private int _constantWidth = -1;
     private int _constantHeight = -1;
@@ -30,6 +31,7 @@ public sealed class ColorManagementEffect : IDisposable
     private Vector4 _constantHdrBackground;
     private ToneMappingMode _constantToneMapping;
     private GamutMappingMode _constantGamutMapping;
+    private ViewInterpolationMode _constantInterpolation;
     private bool _constantApplyHlgOotf;
     private bool _constantInputRequiresHlgOotf;
 
@@ -41,6 +43,7 @@ public sealed class ColorManagementEffect : IDisposable
         public Vector4 SourceParameters;
         public Vector4 OutputParameters;
         public Vector4 MappingParameters;
+        public Vector4 SamplingParameters;
         public Vector4 SdrBackground;
         public Vector4 HdrBackground;
     }
@@ -55,6 +58,13 @@ public sealed class ColorManagementEffect : IDisposable
         _pointSampler = device.CreateSamplerState(new SamplerDescription
         {
             Filter = Filter.MinMagMipPoint,
+            AddressU = TextureAddressMode.Clamp,
+            AddressV = TextureAddressMode.Clamp,
+            AddressW = TextureAddressMode.Clamp
+        });
+        _linearSampler = device.CreateSamplerState(new SamplerDescription
+        {
+            Filter = Filter.MinMagMipLinear,
             AddressU = TextureAddressMode.Clamp,
             AddressV = TextureAddressMode.Clamp,
             AddressW = TextureAddressMode.Clamp
@@ -82,6 +92,7 @@ public sealed class ColorManagementEffect : IDisposable
         float sdrDisplayPeakNits,
         ToneMappingMode toneMapping,
         GamutMappingMode gamutMapping,
+        ViewInterpolationMode interpolation,
         bool applyHlgOotf,
         bool inputRequiresHlgOotf,
         Vector4 sdrBackground,
@@ -106,6 +117,7 @@ public sealed class ColorManagementEffect : IDisposable
                        !_constantDisplay.Equals(display) ||
                        _constantToneMapping != toneMapping ||
                        _constantGamutMapping != gamutMapping ||
+                       _constantInterpolation != interpolation ||
                        _constantApplyHlgOotf != applyHlgOotf ||
                        _constantInputRequiresHlgOotf != inputRequiresHlgOotf ||
                        _constantSdrBackground != sdrBackground ||
@@ -133,6 +145,7 @@ public sealed class ColorManagementEffect : IDisposable
                     (float)toneMapping,
                     (float)gamutMapping,
                     applyHlgOotf && inputRequiresHlgOotf ? 1.0f : 0.0f),
+                SamplingParameters = new Vector4((float)interpolation, 0.0f, 0.0f, 0.0f),
                 SdrBackground = sdrBackground,
                 HdrBackground = hdrBackground
             };
@@ -147,6 +160,7 @@ public sealed class ColorManagementEffect : IDisposable
             _constantDisplay = display;
             _constantToneMapping = toneMapping;
             _constantGamutMapping = gamutMapping;
+            _constantInterpolation = interpolation;
             _constantApplyHlgOotf = applyHlgOotf;
             _constantInputRequiresHlgOotf = inputRequiresHlgOotf;
             _constantSdrBackground = sdrBackground;
@@ -154,7 +168,7 @@ public sealed class ColorManagementEffect : IDisposable
         }
 
         context.PSSetConstantBuffers(0, new[] { _constantBuffer });
-        context.PSSetSamplers(0, new[] { _pointSampler });
+        context.PSSetSamplers(0, new[] { _pointSampler, _linearSampler });
         context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
         context.Draw(3, 0);
     }
@@ -167,6 +181,7 @@ public sealed class ColorManagementEffect : IDisposable
         _vertexShader.Dispose();
         _pixelShader.Dispose();
         _pointSampler.Dispose();
+        _linearSampler.Dispose();
         _constantBuffer.Dispose();
     }
 }

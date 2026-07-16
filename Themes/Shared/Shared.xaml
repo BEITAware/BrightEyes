@@ -4,6 +4,7 @@
     <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
     <converters:ResourceLookupConverter x:Key="ResourceLookupConverter" />
     <converters:AnalysisDataToBitmapConverter x:Key="AnalysisDataToBitmapConverter" />
+    <converters:EnumDescriptionConverter x:Key="EnumDescriptionConverter" />
 
     <BitmapImage x:Key="ProcessIcon.Image" UriSource="/BrightEyes;component/Resources/image.png" />
     <BitmapImage x:Key="ProcessIcon.Decoder" UriSource="/BrightEyes;component/Resources/load.png" />

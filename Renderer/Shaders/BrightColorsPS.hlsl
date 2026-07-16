@@ -1,5 +1,6 @@
 Texture2D SourceTexture : register(t0);
 SamplerState PointSampler : register(s0);
+SamplerState LinearSampler : register(s1);
 
 cbuffer ColorConstants : register(b0)
 {
@@ -11,6 +12,8 @@ cbuffer ColorConstants : register(b0)
     float4 OutputParameters;
     // source peak, tone mapper, gamut mapper, apply HLG OOTF
     float4 MappingParameters;
+    // interpolation mode: BrightEyes bilinear, bilinear, bicubic, nearest neighbor, area
+    float4 SamplingParameters;
     float4 SdrBackground;
     float4 HdrBackground;
 };
@@ -124,10 +127,14 @@ float3 ToLinearRec709(float3 linearColor)
     return Rec2020ToRec709(ProPhotoToRec2020(linearColor));
 }
 
-float4 DecodeToPremultipliedLinear709(int2 coordinate)
+float4 LoadEncoded(int2 coordinate)
 {
     coordinate = clamp(coordinate, int2(0, 0), int2(SourceSize) - 1);
-    float4 encoded = SourceTexture.Load(int3(coordinate, 0));
+    return SourceTexture.Load(int3(coordinate, 0));
+}
+
+float4 DecodeToPremultipliedLinear709(float4 encoded)
+{
     float alpha = SourceParameters.z > 1.5 ? 1.0 : saturate(encoded.a);
     float3 color = encoded.rgb;
     if (SourceParameters.z > 0.5 && SourceParameters.z < 1.5 && alpha > 1e-6)
@@ -136,14 +143,115 @@ float4 DecodeToPremultipliedLinear709(int2 coordinate)
     return float4(linearColor * alpha, alpha);
 }
 
-float4 SampleLinearLight(float2 uv)
+float4 LoadPremultipliedLinear709(int2 coordinate)
+{
+    return DecodeToPremultipliedLinear709(LoadEncoded(coordinate));
+}
+
+float4 SampleBrightEyesBilinear(float2 uv)
 {
     float2 position = uv * SourceSize - 0.5;
     int2 base = int2(floor(position));
     float2 fraction = position - floor(position);
-    float4 a = lerp(DecodeToPremultipliedLinear709(base), DecodeToPremultipliedLinear709(base + int2(1, 0)), fraction.x);
-    float4 b = lerp(DecodeToPremultipliedLinear709(base + int2(0, 1)), DecodeToPremultipliedLinear709(base + int2(1, 1)), fraction.x);
+    float4 a = lerp(LoadPremultipliedLinear709(base), LoadPremultipliedLinear709(base + int2(1, 0)), fraction.x);
+    float4 b = lerp(LoadPremultipliedLinear709(base + int2(0, 1)), LoadPremultipliedLinear709(base + int2(1, 1)), fraction.x);
     return lerp(a, b, fraction.y);
+}
+
+float4 SampleBilinear(float2 uv)
+{
+    // Conventional GPU bilinear filtering operates on stored code values.
+    return DecodeToPremultipliedLinear709(SourceTexture.SampleLevel(LinearSampler, uv, 0.0));
+}
+
+float CubicCatmullRom(float offset)
+{
+    float x = abs(offset);
+    if (x <= 1.0)
+        return ((1.5 * x - 2.5) * x) * x + 1.0;
+    if (x < 2.0)
+        return ((-0.5 * x + 2.5) * x - 4.0) * x + 2.0;
+    return 0.0;
+}
+
+float4 SampleBicubic(float2 uv)
+{
+    // Conventional Catmull-Rom bicubic filtering also operates on stored code values.
+    float2 position = uv * SourceSize - 0.5;
+    int2 base = int2(floor(position));
+    float2 fraction = position - floor(position);
+    float4 encoded = 0.0;
+    float weightSum = 0.0;
+
+    [unroll]
+    for (int y = -1; y <= 2; y++)
+    {
+        float weightY = CubicCatmullRom(y - fraction.y);
+        [unroll]
+        for (int x = -1; x <= 2; x++)
+        {
+            float weight = CubicCatmullRom(x - fraction.x) * weightY;
+            encoded += LoadEncoded(base + int2(x, y)) * weight;
+            weightSum += weight;
+        }
+    }
+
+    return DecodeToPremultipliedLinear709(encoded / max(weightSum, 1e-6));
+}
+
+float4 SampleNearestNeighbor(float2 uv)
+{
+    return DecodeToPremultipliedLinear709(SourceTexture.SampleLevel(PointSampler, uv, 0.0));
+}
+
+float4 SampleArea(float2 uv)
+{
+    // The UV derivatives describe the source-space rectangle covered by one
+    // destination pixel. Area filtering is useful only for minification;
+    // conventional bilinear remains the better reconstruction filter when
+    // the image is displayed at its native size or enlarged.
+    float2 footprint = fwidth(uv) * SourceSize;
+    if (footprint.x <= 1.0 && footprint.y <= 1.0)
+        return SampleBilinear(uv);
+
+    // Preserve bilinear reconstruction on an enlarged axis while integrating
+    // the complete footprint on a reduced axis. View rendering normally uses
+    // a uniform scale, but this also keeps the sampler well-defined if that
+    // constraint changes in the future.
+    footprint = max(footprint, 1.0);
+    float2 sourcePosition = uv * SourceSize;
+    float2 areaStart = clamp(sourcePosition - footprint * 0.5, 0.0, SourceSize);
+    float2 areaEnd = clamp(sourcePosition + footprint * 0.5, 0.0, SourceSize);
+    int2 firstPixel = int2(floor(areaStart));
+    int2 endPixel = int2(ceil(areaEnd));
+    float4 encoded = 0.0;
+    float weightSum = 0.0;
+
+    [loop]
+    for (int y = firstPixel.y; y < endPixel.y; y++)
+    {
+        float weightY = max(0.0, min(areaEnd.y, y + 1.0) - max(areaStart.y, (float)y));
+        [loop]
+        for (int x = firstPixel.x; x < endPixel.x; x++)
+        {
+            float weightX = max(0.0, min(areaEnd.x, x + 1.0) - max(areaStart.x, (float)x));
+            float weight = weightX * weightY;
+            encoded += LoadEncoded(int2(x, y)) * weight;
+            weightSum += weight;
+        }
+    }
+
+    return DecodeToPremultipliedLinear709(encoded / max(weightSum, 1e-6));
+}
+
+float4 SampleImage(float2 uv)
+{
+    float interpolation = SamplingParameters.x;
+    if (interpolation < 0.5) return SampleBrightEyesBilinear(uv);
+    if (interpolation < 1.5) return SampleBilinear(uv);
+    if (interpolation < 2.5) return SampleBicubic(uv);
+    if (interpolation < 3.5) return SampleNearestNeighbor(uv);
+    return SampleArea(uv);
 }
 
 float3 ToneMapLuminance(float3 color, float targetPeak)
@@ -221,7 +329,7 @@ float4 EncodeOutput(float3 linear709)
 
 float4 main(PS_INPUT input) : SV_TARGET
 {
-    float4 sample = SampleLinearLight(input.TexCoord);
+    float4 sample = SampleImage(input.TexCoord);
     float alpha = saturate(sample.a);
     float3 straight = alpha > 1e-6 ? sample.rgb / alpha : 0.0;
     float3 mapped = ApplyRenderMapper(straight);

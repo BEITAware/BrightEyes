@@ -21,4 +21,8 @@
     <SolidColorBrush x:Key="ApplicationPrimaryTextBrush" Color="#172B3A" />
     <SolidColorBrush x:Key="StatusBarBackgroundBrush" Color="#E3E8EE" />
     <SolidColorBrush x:Key="StatusBarTextBrush" Color="#334B5C" />
+    <CornerRadius x:Key="ApplicationPanelCornerRadius">2</CornerRadius>
+    <Thickness x:Key="ApplicationPanelBorderThickness">1</Thickness>
+    <CornerRadius x:Key="PreviewPanelCornerRadius">2</CornerRadius>
+    <Thickness x:Key="PreviewPanelBorderThickness">1</Thickness>
 </ResourceDictionary>

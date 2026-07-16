@@ -37,6 +37,7 @@
     <system:String x:Key="Parameter_AlphaMode">Alpha 处理</system:String>
     <system:String x:Key="Parameter_Precision">精度</system:String>
     <system:String x:Key="Parameter_RenderPreset">映射预设</system:String>
+    <system:String x:Key="Parameter_Interpolation">插值方法</system:String>
     <system:String x:Key="Parameter_BlurRadius">模糊半径</system:String>
     <system:String x:Key="Parameter_BlurSigma">标准差</system:String>
     <system:String x:Key="Parameter_SdrWhite">SDR 白</system:String>

@@ -128,7 +128,9 @@
                                 <ItemsControl x:Name="AnalysisProcessList" ItemsSource="{Binding ActiveAnalysisProcesses}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border BorderBrush="{DynamicResource AnalysisBorderBrush}" BorderThickness="1" CornerRadius="2"
+                                            <Border BorderBrush="{DynamicResource AnalysisBorderBrush}"
+                                                    BorderThickness="{DynamicResource ApplicationPanelBorderThickness}"
+                                                    CornerRadius="{DynamicResource ApplicationPanelCornerRadius}"
                                                     Background="{DynamicResource PipelineSurfaceBrush}" Margin="3,4" SnapsToDevicePixels="True"
                                                     ToolTip="{Binding Diagnostic}">
                                                 <Grid>
@@ -193,7 +195,9 @@
             <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource WorkspaceSplitterBrush}" />
 
             <Border Grid.Column="2" Margin="0,5" Background="{DynamicResource PreviewSurfaceBrush}"
-                    BorderBrush="{DynamicResource AnalysisBorderBrush}" BorderThickness="1" CornerRadius="2">
+                    BorderBrush="{DynamicResource AnalysisBorderBrush}"
+                    BorderThickness="{DynamicResource PreviewPanelBorderThickness}"
+                    CornerRadius="{DynamicResource PreviewPanelCornerRadius}">
                 <local:D3DHost InitializeAction="{Binding InitializeRendererAction}"
                                ResizeAction="{Binding ResizeRendererAction}"
                                MouseWheelAction="{Binding PreviewMouseWheelAction}">
@@ -352,7 +356,7 @@
                 <TextBlock Grid.Column="1" Text="{Binding ViewZoomText}" Margin="12,0" VerticalAlignment="Center"
                            Foreground="{DynamicResource StatusBarTextBrush}" />
                 <TextBlock Grid.Column="2" Text="GPU 优先 / linear scRGB / 1.0 = 80 nit" VerticalAlignment="Center"
-                           Foreground="{DynamicResource ApplicationMutedTextBrush}" />
+                           Foreground="{DynamicResource StatusBarTextBrush}" Opacity="0.72" />
             </Grid>
         </Border>
     </Grid>

@@ -35,6 +35,7 @@
     <system:String x:Key="Parameter_AlphaMode">Alpha handling</system:String>
     <system:String x:Key="Parameter_Precision">Precision</system:String>
     <system:String x:Key="Parameter_RenderPreset">Mapping preset</system:String>
+    <system:String x:Key="Parameter_Interpolation">Interpolation</system:String>
     <system:String x:Key="Parameter_BlurRadius">Blur radius</system:String>
     <system:String x:Key="Parameter_BlurSigma">Sigma</system:String>
     <system:String x:Key="Parameter_SdrWhite">SDR white</system:String>

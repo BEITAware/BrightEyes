@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace BrightEyes.Processing.BuiltIn;
 
 public static class BuiltInProcessIds
@@ -46,6 +48,16 @@ public enum BackgroundMode
     ApplicationBackground,
     TransparentBlack,
     White
+}
+
+public enum ViewInterpolationMode
+{
+    [Description("BrightEyes Bilinear")]
+    BrightEyesBilinear = 0,
+    Bilinear = 1,
+    Bicubic = 2,
+    NearestNeighbor = 3,
+    Area = 4
 }
 
 public enum WaveformDisplayMode
