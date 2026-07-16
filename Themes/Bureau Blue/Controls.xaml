@@ -83,7 +83,7 @@
 
     <!-- GroupBox Style -->
     <Style TargetType="{x:Type GroupBox}">
-        <Setter Property="BorderBrush" Value="{StaticResource AeroBorderBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AeroBorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Template">
             <Setter.Value>
@@ -94,11 +94,11 @@
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
                         <!-- Header -->
-                        <Border Grid.Row="0" Background="{StaticResource AeroBlueGradientBrush}" BorderBrush="{StaticResource AeroBorderBrush}" BorderThickness="1" CornerRadius="2,2,0,0" >
+                        <Border Grid.Row="0" Background="{DynamicResource AeroBlueGradientBrush}" BorderBrush="{DynamicResource AeroBorderBrush}" BorderThickness="1" CornerRadius="2,2,0,0" >
                             <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" Margin="5,2,5,2"/>
                         </Border>
                         <!-- Content -->
-                        <Border Grid.Row="1" BorderBrush="{StaticResource AeroBorderBrush}" BorderThickness="1,0,1,1" CornerRadius="0,0,2,2" Padding="5">
+                        <Border Grid.Row="1" BorderBrush="{DynamicResource AeroBorderBrush}" BorderThickness="1,0,1,1" CornerRadius="0,0,2,2" Padding="5">
                             <ContentPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" Margin="{TemplateBinding Padding}"/>
                         </Border>
                     </Grid>

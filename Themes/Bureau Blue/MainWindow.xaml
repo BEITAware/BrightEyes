@@ -1,0 +1,24 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <SolidColorBrush x:Key="WindowSurfaceBrush" Color="#F2F5F7" />
+    <SolidColorBrush x:Key="DocumentBarBackgroundBrush" Color="#E5EBF0" />
+    <SolidColorBrush x:Key="ApplicationChromeBorderBrush" Color="#C5D1DA" />
+    <SolidColorBrush x:Key="ApplicationMutedTextBrush" Color="#526675" />
+    <SolidColorBrush x:Key="InspectorDividerBrush" Color="#D8E1E8" />
+    <SolidColorBrush x:Key="AnalysisBorderBrush" Color="#A5C9E6" />
+    <SolidColorBrush x:Key="WorkspaceSplitterBrush" Color="#CCD7DF" />
+    <SolidColorBrush x:Key="PreviewSurfaceBrush" Color="#F9FAFE" />
+    <SolidColorBrush x:Key="HighlightEdgeBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="PipelineSurfaceBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="PipelineSurfaceBorderBrush" Color="#9BAFBE" />
+    <SolidColorBrush x:Key="PipelineAllowedBorderBrush" Color="#2878B5" />
+    <SolidColorBrush x:Key="PipelineDeniedSurfaceBrush" Color="#FFF1F1" />
+    <SolidColorBrush x:Key="PipelineDeniedBorderBrush" Color="#B84A4A" />
+    <SolidColorBrush x:Key="PipelineWarningBorderBrush" Color="#C48118" />
+    <SolidColorBrush x:Key="PipelinePlaceholderTextBrush" Color="#7B8B97" />
+    <SolidColorBrush x:Key="PipelineStatusBorderBrush" Color="#A4AAAF" />
+    <SolidColorBrush x:Key="PipelineStatusTextBrush" Color="#405467" />
+    <SolidColorBrush x:Key="ApplicationPrimaryTextBrush" Color="#172B3A" />
+    <SolidColorBrush x:Key="StatusBarBackgroundBrush" Color="#E3E8EE" />
+    <SolidColorBrush x:Key="StatusBarTextBrush" Color="#334B5C" />
+</ResourceDictionary>

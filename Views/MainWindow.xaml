@@ -10,7 +10,7 @@
         xmlns:r="clr-namespace:System.Windows.Controls.Ribbon;assembly=System.Windows.Controls.Ribbon"
         mc:Ignorable="d"
         Title="BrightEyes" Height="780" Width="1280" MinHeight="620" MinWidth="980"
-        Background="#F2F5F7" AllowDrop="True"
+        Background="{DynamicResource WindowSurfaceBrush}" AllowDrop="True"
         PreviewDragOver="PipelineDragOver" PreviewDrop="PipelineDrop"
         GiveFeedback="PipelineDragGiveFeedback">
     <i:Interaction.Triggers>
@@ -55,20 +55,32 @@
                                     ToolTip="以预览区域中心为基准缩小图像。" />
                 </r:RibbonGroup>
             </r:RibbonTab>
+
+            <r:RibbonTab Header="主题测试">
+                <r:RibbonGroup Header="主题">
+                    <r:RibbonButton Label="Bureau Blue" Tag="Bureau Blue" Click="ThemeButton_Click" />
+                    <r:RibbonButton Label="Bureau White" Tag="Bureau White" Click="ThemeButton_Click" />
+                    <r:RibbonButton Label="Luna" Tag="Luna" Click="ThemeButton_Click" />
+                    <r:RibbonButton Label="Polar Day" Tag="Polar Day" Click="ThemeButton_Click" />
+                    <r:RibbonButton Label="Polar Night" Tag="Polar Night" Click="ThemeButton_Click" />
+                    <r:RibbonButton Label="High Contrast" Tag="High Contrast" Click="ThemeButton_Click" />
+                </r:RibbonGroup>
+            </r:RibbonTab>
         </r:Ribbon>
 
-        <Border Grid.Row="1" Background="#E5EBF0" BorderBrush="#C5D1DA" BorderThickness="0,0,0,1">
+        <Border Grid.Row="1" Background="{DynamicResource DocumentBarBackgroundBrush}"
+                BorderBrush="{DynamicResource ApplicationChromeBorderBrush}" BorderThickness="0,0,0,1">
             <Grid Margin="7,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="220" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="文档" VerticalAlignment="Center" Foreground="#526675" />
+                <TextBlock Text="文档" VerticalAlignment="Center" Foreground="{DynamicResource ApplicationMutedTextBrush}" />
                 <ComboBox Grid.Column="1" ItemsSource="{Binding Documents}" SelectedItem="{Binding ActiveDocument}"
                           DisplayMemberPath="Title" Margin="7,4,12,4" />
                 <TextBlock Grid.Column="2" Text="{Binding ActiveDocument.Source.FilePath}" VerticalAlignment="Center"
-                           Foreground="#526675" TextTrimming="CharacterEllipsis" />
+                           Foreground="{DynamicResource ApplicationMutedTextBrush}" TextTrimming="CharacterEllipsis" />
             </Grid>
         </Border>
 
@@ -91,8 +103,9 @@
                             </Grid.RowDefinitions>
                             <ListBox ItemsSource="{Binding MetadataFacts}" BorderThickness="0" Background="Transparent"
                                      HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
-                            <Border Grid.Row="1" BorderBrush="#D8E1E8" BorderThickness="0,1,0,0" Padding="5,7">
-                                <TextBlock Text="{Binding InspectorText}" TextWrapping="Wrap" FontSize="10" Foreground="#526675" />
+                            <Border Grid.Row="1" BorderBrush="{DynamicResource InspectorDividerBrush}" BorderThickness="0,1,0,0" Padding="5,7">
+                                <TextBlock Text="{Binding InspectorText}" TextWrapping="Wrap" FontSize="10"
+                                           Foreground="{DynamicResource ApplicationMutedTextBrush}" />
                             </Border>
                         </Grid>
                     </TabItem>
@@ -101,12 +114,12 @@
                             <ItemsControl ItemsSource="{Binding ActiveOscilloscopes}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border BorderBrush="#A5C9E6" BorderThickness="1" CornerRadius="3" Margin="3,4" Padding="5">
+                                        <Border BorderBrush="{DynamicResource AnalysisBorderBrush}" BorderThickness="1" CornerRadius="3" Margin="3,4" Padding="5">
                                             <StackPanel>
-                                                <TextBlock Text="{Binding Summary}" FontSize="10" Foreground="#526675" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding Summary}" FontSize="10" Foreground="{DynamicResource ApplicationMutedTextBrush}" TextWrapping="Wrap" />
                                                 <Image Height="120" Margin="0,5,0,0" Stretch="Fill"
                                                        Source="{Binding LatestAnalysis, Converter={StaticResource AnalysisDataToBitmapConverter}}" />
-                                                <TextBlock Text="{Binding Diagnostic}" FontSize="9" Foreground="#526675" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                                <TextBlock Text="{Binding Diagnostic}" FontSize="9" Foreground="{DynamicResource ApplicationMutedTextBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
                                             </StackPanel>
                                         </Border>
                                     </DataTemplate>
@@ -117,9 +130,10 @@
                 </TabControl>
             </GroupBox>
 
-            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="#CCD7DF" />
+            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource WorkspaceSplitterBrush}" />
 
-            <Border Grid.Column="2" Margin="0,5" Background="#F9FAFE" BorderBrush="#A5C9E6" BorderThickness="1" CornerRadius="2">
+            <Border Grid.Column="2" Margin="0,5" Background="{DynamicResource PreviewSurfaceBrush}"
+                    BorderBrush="{DynamicResource AnalysisBorderBrush}" BorderThickness="1" CornerRadius="2">
                 <local:D3DHost InitializeAction="{Binding InitializeRendererAction}"
                                ResizeAction="{Binding ResizeRendererAction}"
                                MouseWheelAction="{Binding PreviewMouseWheelAction}">
@@ -127,7 +141,7 @@
                 </local:D3DHost>
             </Border>
 
-            <GridSplitter Grid.Column="3" Width="5" HorizontalAlignment="Stretch" Background="#CCD7DF" />
+            <GridSplitter Grid.Column="3" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource WorkspaceSplitterBrush}" />
 
             <Grid Grid.Column="4" Margin="5">
                 <Grid.RowDefinitions>
@@ -143,55 +157,55 @@
                             <RowDefinition Height="*" />
                             <RowDefinition Height="23" />
                         </Grid.RowDefinitions>
-                        <Border Background="{StaticResource BureauHeaderBackgroundBrush}"
-                                BorderBrush="{StaticResource BureauHeaderBorderBrush}" BorderThickness="1" SnapsToDevicePixels="True">
+                        <Border Background="{DynamicResource BureauHeaderBackgroundBrush}"
+                                BorderBrush="{DynamicResource BureauHeaderBorderBrush}" BorderThickness="1" SnapsToDevicePixels="True">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="32" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="72" />
                                 </Grid.ColumnDefinitions>
-                                <Rectangle Grid.ColumnSpan="3" Fill="{StaticResource BureauHeaderTextureBrush}"
+                                <Rectangle Grid.ColumnSpan="3" Fill="{DynamicResource BureauHeaderTextureBrush}"
                                            IsHitTestVisible="False" />
-                                <Border BorderBrush="{StaticResource BureauHeaderSeparatorBrush}" BorderThickness="0,0,1,0">
+                                <Border BorderBrush="{DynamicResource BureauHeaderSeparatorBrush}" BorderThickness="0,0,1,0">
                                     <TextBlock Text="#" Margin="6,0" VerticalAlignment="Center"
-                                               Foreground="{StaticResource BureauHeaderTextBrush}" FontSize="10" />
+                                               Foreground="{DynamicResource BureauHeaderTextBrush}" FontSize="10" />
                                 </Border>
-                                <Border Grid.Column="1" BorderBrush="{StaticResource BureauHeaderSeparatorBrush}" BorderThickness="0,0,1,0">
+                                <Border Grid.Column="1" BorderBrush="{DynamicResource BureauHeaderSeparatorBrush}" BorderThickness="0,0,1,0">
                                     <TextBlock Text="过程 / 数据流" Margin="6,0" VerticalAlignment="Center"
-                                               Foreground="{StaticResource BureauHeaderTextBrush}" FontWeight="SemiBold" />
+                                               Foreground="{DynamicResource BureauHeaderTextBrush}" FontWeight="SemiBold" />
                                 </Border>
                                 <TextBlock Grid.Column="2" Text="状态" Margin="6,0" VerticalAlignment="Center"
-                                           Foreground="{StaticResource BureauHeaderTextBrush}" FontWeight="SemiBold" />
-                                <Border Grid.ColumnSpan="3" Margin="1" BorderBrush="#FFFFFF"
+                                           Foreground="{DynamicResource BureauHeaderTextBrush}" FontWeight="SemiBold" />
+                                <Border Grid.ColumnSpan="3" Margin="1" BorderBrush="{DynamicResource HighlightEdgeBrush}"
                                         BorderThickness="0,1,0,0" IsHitTestVisible="False" />
                             </Grid>
                         </Border>
                         <Border x:Name="PipelineDropSurface" Grid.Row="1">
                             <Border.Style>
                                 <Style TargetType="Border">
-                                    <Setter Property="Background" Value="#FFFFFF" />
-                                    <Setter Property="BorderBrush" Value="#9BAFBE" />
+                                    <Setter Property="Background" Value="{DynamicResource PipelineSurfaceBrush}" />
+                                    <Setter Property="BorderBrush" Value="{DynamicResource PipelineSurfaceBorderBrush}" />
                                     <Setter Property="BorderThickness" Value="1,0,1,0" />
                                     <Style.Triggers>
                                         <Trigger Property="Tag" Value="DropAllowed">
-                                            <Setter Property="Background" Value="{StaticResource ProcessDropAreaAllowedBrush}" />
-                                            <Setter Property="BorderBrush" Value="#2878B5" />
+                                            <Setter Property="Background" Value="{DynamicResource ProcessDropAreaAllowedBrush}" />
+                                            <Setter Property="BorderBrush" Value="{DynamicResource PipelineAllowedBorderBrush}" />
                                         </Trigger>
                                         <Trigger Property="Tag" Value="DropDenied">
-                                            <Setter Property="Background" Value="#FFF1F1" />
-                                            <Setter Property="BorderBrush" Value="#B84A4A" />
+                                            <Setter Property="Background" Value="{DynamicResource PipelineDeniedSurfaceBrush}" />
+                                            <Setter Property="BorderBrush" Value="{DynamicResource PipelineDeniedBorderBrush}" />
                                         </Trigger>
                                         <Trigger Property="Tag" Value="DropWarning">
-                                            <Setter Property="Background" Value="{StaticResource ProcessDropAreaWarningBrush}" />
-                                            <Setter Property="BorderBrush" Value="#C48118" />
+                                            <Setter Property="Background" Value="{DynamicResource ProcessDropAreaWarningBrush}" />
+                                            <Setter Property="BorderBrush" Value="{DynamicResource PipelineWarningBorderBrush}" />
                                         </Trigger>
                                     </Style.Triggers>
                                 </Style>
                             </Border.Style>
                             <Grid>
                                 <TextBlock Text="拖放到此区域" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                           Foreground="#7B8B97" FontSize="12" IsHitTestVisible="False">
+                                           Foreground="{DynamicResource PipelinePlaceholderTextBrush}" FontSize="12" IsHitTestVisible="False">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="Visibility" Value="Collapsed" />
@@ -205,31 +219,32 @@
                                 </TextBlock>
                                 <ListBox x:Name="PipelineList" ItemsSource="{Binding ActiveDocument.Processes}"
                                          SelectedItem="{Binding SelectedProcess, Mode=TwoWay}"
-                                         ItemContainerStyle="{StaticResource ProcessListItemStyle}"
-                                         ItemTemplate="{StaticResource ProcessItemTemplate}"
+                                         ItemContainerStyle="{DynamicResource ProcessListItemStyle}"
+                                         ItemTemplate="{DynamicResource ProcessItemTemplate}"
                                          Background="Transparent" BorderThickness="0"
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                          PreviewMouseLeftButtonDown="PipelineList_PreviewMouseLeftButtonDown"
                                          PreviewMouseMove="PipelineList_PreviewMouseMove" />
                             </Grid>
                         </Border>
-                        <Border Grid.Row="2" Background="{StaticResource BureauStatusBackgroundBrush}"
-                                BorderBrush="#A4AAAF" BorderThickness="1" SnapsToDevicePixels="True">
+                        <Border Grid.Row="2" Background="{DynamicResource BureauStatusBackgroundBrush}"
+                                BorderBrush="{DynamicResource PipelineStatusBorderBrush}" BorderThickness="1" SnapsToDevicePixels="True">
                             <Grid Margin="5,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock x:Name="PipelineHint" Text="就绪" VerticalAlignment="Center"
-                                           FontSize="10" Foreground="#405467" TextTrimming="CharacterEllipsis" />
+                                           FontSize="10" Foreground="{DynamicResource PipelineStatusTextBrush}" TextTrimming="CharacterEllipsis" />
                                 <TextBlock Grid.Column="1" Text="{Binding ActiveDocument.Processes.Count, StringFormat=共 {0} 项}"
-                                           Margin="8,0,0,0" VerticalAlignment="Center" FontSize="10" Foreground="#405467" />
+                                           Margin="8,0,0,0" VerticalAlignment="Center" FontSize="10"
+                                           Foreground="{DynamicResource PipelineStatusTextBrush}" />
                             </Grid>
                         </Border>
                     </Grid>
                 </GroupBox>
 
-                <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch" Background="#CCD7DF" />
+                <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch" Background="{DynamicResource WorkspaceSplitterBrush}" />
 
                 <GroupBox Grid.Row="2" Header="过程调整">
                     <Grid>
@@ -238,9 +253,10 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
                         <StackPanel Margin="5,2,5,6">
-                            <TextBlock Text="{Binding SelectedProcessName}" FontWeight="SemiBold" Foreground="#172B3A" />
-                            <TextBlock Text="{Binding SelectedProcessDescription}" FontSize="10" Foreground="#526675" TextWrapping="Wrap" />
-                            <TextBlock Text="{Binding SelectedProcess.Diagnostic}" Margin="0,3,0,0" FontSize="10" Foreground="#526675" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding SelectedProcessName}" FontWeight="SemiBold" Foreground="{DynamicResource ApplicationPrimaryTextBrush}" />
+                            <TextBlock Text="{Binding SelectedProcessDescription}" FontSize="10" Foreground="{DynamicResource ApplicationMutedTextBrush}" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding SelectedProcess.Diagnostic}" Margin="0,3,0,0" FontSize="10"
+                                       Foreground="{DynamicResource ApplicationMutedTextBrush}" TextWrapping="Wrap" />
                         </StackPanel>
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                             <StackPanel>
@@ -255,16 +271,20 @@
             </Grid>
         </Grid>
 
-        <Border Grid.Row="3" Background="#E3E8EE" BorderBrush="#C5D1DA" BorderThickness="0,1,0,0">
+        <Border Grid.Row="3" Background="{DynamicResource StatusBarBackgroundBrush}"
+                BorderBrush="{DynamicResource ApplicationChromeBorderBrush}" BorderThickness="0,1,0,0">
             <Grid Margin="8,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="#334B5C" />
-                <TextBlock Grid.Column="1" Text="{Binding ViewZoomText}" Margin="12,0" VerticalAlignment="Center" Foreground="#334B5C" />
-                <TextBlock Grid.Column="2" Text="GPU 优先 / linear scRGB / 1.0 = 80 nit" VerticalAlignment="Center" Foreground="#526675" />
+                <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource StatusBarTextBrush}" />
+                <TextBlock Grid.Column="1" Text="{Binding ViewZoomText}" Margin="12,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource StatusBarTextBrush}" />
+                <TextBlock Grid.Column="2" Text="GPU 优先 / linear scRGB / 1.0 = 80 nit" VerticalAlignment="Center"
+                           Foreground="{DynamicResource ApplicationMutedTextBrush}" />
             </Grid>
         </Border>
     </Grid>

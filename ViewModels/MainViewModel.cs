@@ -114,7 +114,10 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
         {
             if (ReferenceEquals(_activeDocument, value)) return;
             if (_activeDocument is not null)
+            {
+                CancelPreview(_activeDocument);
                 _activeDocument.PipelineChanged -= OnPipelineChanged;
+            }
             _activeDocument = value;
             ResetView();
             if (_activeDocument is not null)
@@ -383,24 +386,30 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
 
     private void OnPipelineChanged(object? sender, PipelineChangedEventArgs e)
     {
-        RebuildSelectedParameters();
+        if (sender is not ImageDocument document || !ReferenceEquals(document, ActiveDocument)) return;
+
+        if (document.HasExecuted)
+            CancelPreview(document);
+
+        if (!ReferenceEquals(SelectedProcess, document.SelectedProcess))
+            SelectedProcess = document.SelectedProcess;
         RebuildOscilloscopes();
         RefreshCommandState();
-        if (ActiveDocument?.HasExecuted != true) return;
-        _previewCancellation?.Cancel();
-        _previewCancellation?.Dispose();
+        if (!document.HasExecuted) return;
+
         _previewCancellation = new CancellationTokenSource();
-        SchedulePreview(e.RequiresDecode, _previewCancellation.Token);
+        SchedulePreview(document, e.RequiresDecode, _previewCancellation.Token);
     }
 
-    private async void SchedulePreview(bool forceDecode, CancellationToken token)
+    private async void SchedulePreview(ImageDocument document, bool forceDecode, CancellationToken token)
     {
         try
         {
             await Task.Delay(140, token);
-            if (token.IsCancellationRequested || ActiveDocument is null || !IsRendererReady) return;
-            await _executor.ExecuteAsync(ActiveDocument, forceDecode);
-            if (!token.IsCancellationRequested) StatusText = "异步预览已更新。";
+            if (token.IsCancellationRequested || !ReferenceEquals(document, ActiveDocument) || !IsRendererReady) return;
+            await _executor.ExecuteAsync(document, forceDecode);
+            if (!token.IsCancellationRequested && ReferenceEquals(document, ActiveDocument))
+                StatusText = "异步预览已更新。";
         }
         catch (OperationCanceledException)
         {
@@ -411,6 +420,14 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
                 StatusText = "异步预览失败，已保留最后有效画面：" + ex.GetBaseException().Message;
             Debug.WriteLine(ex);
         }
+    }
+
+    private void CancelPreview(ImageDocument? document)
+    {
+        _previewCancellation?.Cancel();
+        _previewCancellation?.Dispose();
+        _previewCancellation = null;
+        document?.ExecutionCancellation?.Cancel();
     }
 
     private void RebuildSelectedParameters()
@@ -430,9 +447,12 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
 
     private void RebuildOscilloscopes()
     {
+        OscilloscopeProcess[] oscilloscopes = ActiveDocument?.Processes.OfType<OscilloscopeProcess>().ToArray()
+                                                  ?? Array.Empty<OscilloscopeProcess>();
+        if (ActiveOscilloscopes.SequenceEqual(oscilloscopes)) return;
+
         ActiveOscilloscopes.Clear();
-        if (ActiveDocument is null) return;
-        foreach (OscilloscopeProcess scope in ActiveDocument.Processes.OfType<OscilloscopeProcess>())
+        foreach (OscilloscopeProcess scope in oscilloscopes)
             ActiveOscilloscopes.Add(scope);
     }
 
@@ -555,8 +575,7 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
     public void Dispose()
     {
         if (_disposed) return;
-        _previewCancellation?.Cancel();
-        _previewCancellation?.Dispose();
+        CancelPreview(ActiveDocument);
         foreach (ImageDocument document in Documents) document.Dispose();
         if (_renderer is not null) _renderer.DiagnosticRaised -= OnRendererDiagnostic;
         _renderer?.Dispose();

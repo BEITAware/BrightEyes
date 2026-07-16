@@ -128,6 +128,42 @@ public sealed class ProcessParameterViewModel : INotifyPropertyChanged, IDisposa
 
     private void OnParameterPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        switch (e.PropertyName)
+        {
+            case nameof(IProcessParameter.IsAutomatic):
+                OnPropertyChanged(nameof(IsAutomatic));
+                break;
+            case nameof(IProcessParameter.EffectiveValue):
+                OnPropertyChanged(nameof(SelectedEnumValue));
+                OnPropertyChanged(nameof(BooleanValue));
+                OnPropertyChanged(nameof(ValueText));
+                OnPropertyChanged(nameof(NumberValue));
+                OnPropertyChanged(nameof(EffectiveText));
+                break;
+            case nameof(IProcessParameter.DetectedValue):
+                OnPropertyChanged(nameof(DetectedText));
+                break;
+            case nameof(IProcessParameter.AutomaticValue):
+                OnPropertyChanged(nameof(AutomaticText));
+                break;
+            case nameof(IProcessParameter.DetectedSource):
+                OnPropertyChanged(nameof(DetectedSource));
+                break;
+            case nameof(IProcessParameter.AutomaticSource):
+                OnPropertyChanged(nameof(AutomaticSource));
+                break;
+            case nameof(IProcessParameter.Confidence):
+                OnPropertyChanged(nameof(Confidence));
+                break;
+            case null:
+            case "":
+                RaiseAllPropertiesChanged();
+                break;
+        }
+    }
+
+    private void RaiseAllPropertiesChanged()
+    {
         OnPropertyChanged(nameof(IsAutomatic));
         OnPropertyChanged(nameof(SelectedEnumValue));
         OnPropertyChanged(nameof(BooleanValue));

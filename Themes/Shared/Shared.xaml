@@ -1,0 +1,14 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:converters="clr-namespace:BrightEyes.Converters">
+    <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
+    <converters:ResourceLookupConverter x:Key="ResourceLookupConverter" />
+    <converters:AnalysisDataToBitmapConverter x:Key="AnalysisDataToBitmapConverter" />
+
+    <BitmapImage x:Key="ProcessIcon.Image" UriSource="/BrightEyes;component/Resources/image.png" />
+    <BitmapImage x:Key="ProcessIcon.Decoder" UriSource="/BrightEyes;component/Resources/load.png" />
+    <BitmapImage x:Key="ProcessIcon.Mapper" UriSource="/BrightEyes;component/Resources/ColorManager.png" />
+    <BitmapImage x:Key="ProcessIcon.View" UriSource="/BrightEyes;component/Resources/HDRDisplay.png" />
+    <BitmapImage x:Key="ProcessIcon.Scope" UriSource="/BrightEyes;component/Resources/Nodegraph.png" />
+    <BitmapImage x:Key="ProcessIcon.Utility" UriSource="/BrightEyes;component/Resources/FlexiblePort.png" />
+</ResourceDictionary>

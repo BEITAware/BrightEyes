@@ -1,4 +1,5 @@
 using BrightEyes.Processing.Contracts;
+using BrightEyes.Themes;
 using BrightEyes.ViewModels;
 using System.Windows;
 using System.Windows.Controls;
@@ -36,6 +37,12 @@ public partial class MainWindow : Window
     }
 
     private MainViewModel ViewModel => (MainViewModel)DataContext;
+
+    private void ThemeButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string themeName })
+            ThemeManager.Apply(themeName);
+    }
 
     private void ProcessRibbonButton_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {

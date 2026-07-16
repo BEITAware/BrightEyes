@@ -1,0 +1,8 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="../Bureau Blue/Theme.xaml" />
+        <ResourceDictionary Source="Palette.xaml" />
+        <ResourceDictionary Source="Ribbon.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+</ResourceDictionary>

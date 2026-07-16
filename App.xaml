@@ -9,8 +9,9 @@
                 <!-- Use the WPF Aero (Aero1) control theme instead of the OS-selected Aero2 theme. -->
                 <ResourceDictionary Source="/PresentationFramework.Aero;component/themes/Aero.NormalColor.xaml"/>
                 <ResourceDictionary Source="Resources/Localization/Strings.zh-CN.xaml"/>
-                <ResourceDictionary Source="Resources/Styles/Aero.xaml"/>
-                <ResourceDictionary Source="Resources/Styles/ProcessPipeline.xaml"/>
+                <ResourceDictionary Source="Themes/Shared/Shared.xaml"/>
+                <!-- ThemeManager replaces this final dictionary when a theme is selected. -->
+                <ResourceDictionary Source="Themes/Bureau Blue/Theme.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>
