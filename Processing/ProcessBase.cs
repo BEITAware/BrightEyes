@@ -81,11 +81,7 @@ public abstract class ProcessBase : IImageProcess
 
     public virtual IReadOnlyList<string> ValidateSemanticInput(ImageSemantics input) => Array.Empty<string>();
 
-    public virtual ValueTask ExecuteAsync(ProcessExecutionContext context, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        return ValueTask.CompletedTask;
-    }
+    public abstract ValueTask ExecuteAsync(ProcessExecutionContext context, CancellationToken cancellationToken);
 
     public void ResetParameters()
     {

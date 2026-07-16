@@ -14,8 +14,10 @@ namespace BrightEyes.Processing.BuiltIn;
     RibbonOrder = 0,
     IconResourceKey = "ProcessIcon.Image",
     AllowMultiple = false,
+    CanAdd = false,
     CanDelete = false,
     CanDisable = false,
+    CanMove = false,
     ExecutionDomain = ProcessExecutionDomain.Cpu,
     Version = 1)]
 public sealed class ImageSourceProcess : ProcessBase
@@ -43,5 +45,13 @@ public sealed class ImageSourceProcess : ProcessBase
         State = Source is null ? ProcessState.Error : ProcessState.Valid;
         Diagnostic = Source is null ? "没有原始图像" : "仅持有压缩数据与不可变来源元数据；未执行像素解码。";
         NotifySummaryChanged();
+    }
+
+    public override ValueTask ExecuteAsync(ProcessExecutionContext context, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        context.Value = Source ?? context.Source;
+        Diagnostic = "压缩文件及不可变来源元数据已送入过程图；尚未解释像素。";
+        return ValueTask.CompletedTask;
     }
 }

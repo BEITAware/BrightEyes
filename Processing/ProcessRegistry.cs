@@ -109,6 +109,15 @@ public sealed class ProcessRegistry
             diagnostics.Add(new("Error", $"Process {type.FullName} requires a public parameterless constructor.", type.FullName));
         if (definition.Version < 1)
             diagnostics.Add(new("Error", $"Process {definition.StableId} has invalid version {definition.Version}.", type.FullName));
+        if (definition.ImageReadOnly &&
+            (!Contracts.ProcessConnectionPolicy.IsGpuImageType(definition.InputType) ||
+             definition.InputType != definition.OutputType))
+        {
+            diagnostics.Add(new(
+                "Error",
+                $"Image-read-only process {definition.StableId} must declare an identical GPU image input and output type.",
+                type.FullName));
+        }
         if (!definition.AllowMultiple && definition.StableId.EndsWith("oscilloscope", StringComparison.OrdinalIgnoreCase))
             diagnostics.Add(new("Warning", $"Analysis process {definition.StableId} does not allow multiple instances.", type.FullName));
 

@@ -43,9 +43,9 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
         SelectedParameters = new ObservableCollection<ProcessParameterViewModel>();
         SelectedBasicParameters = new ObservableCollection<ProcessParameterViewModel>();
         SelectedAdvancedParameters = new ObservableCollection<ProcessParameterViewModel>();
-        ActiveOscilloscopes = new ObservableCollection<OscilloscopeProcess>();
+        ActiveAnalysisProcesses = new ObservableCollection<AnalysisProcessBase>();
         ProcessRibbonGroups = _registry.Descriptors
-            .Where(descriptor => descriptor.Definition.InputType != ProcessDataType.None)
+            .Where(descriptor => descriptor.Definition.CanAdd)
             .GroupBy(descriptor => (descriptor.Definition.RibbonTab, descriptor.Definition.RibbonGroup))
             .Select(group => new ProcessRibbonGroupViewModel(
                 group.Key.RibbonTab,
@@ -82,7 +82,7 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
     public ObservableCollection<ProcessParameterViewModel> SelectedParameters { get; }
     public ObservableCollection<ProcessParameterViewModel> SelectedBasicParameters { get; }
     public ObservableCollection<ProcessParameterViewModel> SelectedAdvancedParameters { get; }
-    public ObservableCollection<OscilloscopeProcess> ActiveOscilloscopes { get; }
+    public ObservableCollection<AnalysisProcessBase> ActiveAnalysisProcesses { get; }
     public IReadOnlyList<ProcessRibbonGroupViewModel> ProcessRibbonGroups { get; }
     public Func<IntPtr, int, int, bool> InitializeRendererAction { get; }
     public Action<int, int> ResizeRendererAction { get; }
@@ -127,7 +127,7 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
             }
             OnPropertyChanged();
             OnPropertyChanged(nameof(MetadataFacts));
-            RebuildOscilloscopes();
+            RebuildAnalysisProcesses();
             SelectedProcess = value?.SelectedProcess;
             StatusText = value is null
                 ? "打开图像以生成过程。"
@@ -199,6 +199,7 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
             reason = "没有活动文档。";
             return false;
         }
+        if (!ActiveDocument.CanInsertStructurally(descriptor, index, out reason)) return false;
         bool compatible = ActiveDocument.CanInsert(descriptor, index, out reason);
         if (!(compatible || ImageDocument.AllowIncompatiblePlacements)) return false;
         SelectedProcess = ActiveDocument.Insert(descriptor, index);
@@ -213,6 +214,9 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
             reason = "没有活动文档。";
             return false;
         }
+        int oldIndex = ActiveDocument.Processes.IndexOf(process);
+        int adjustedIndex = index > oldIndex ? index - 1 : index;
+        if (!ActiveDocument.CanMoveStructurally(process, adjustedIndex, out reason)) return false;
         bool compatible = ActiveDocument.CanMove(process, index, out reason);
         if (!(compatible || ImageDocument.AllowIncompatiblePlacements)) return false;
         bool moved = ActiveDocument.Move(process, index);
@@ -312,7 +316,13 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
     private void InsertCatalogItem(object? parameter)
     {
         if (parameter is not ProcessCatalogItemViewModel item || ActiveDocument is null) return;
-        int selectedIndex = SelectedProcess is null ? ActiveDocument.Processes.Count : ActiveDocument.Processes.IndexOf(SelectedProcess) + 1;
+        int terminalIndex = ActiveDocument.Processes.ToList().FindIndex(process =>
+            process.Descriptor.Definition.StableId == BuiltInProcessIds.ViewRendering);
+        int selectedIndex = SelectedProcess is null
+            ? Math.Max(terminalIndex, 0)
+            : ActiveDocument.Processes.IndexOf(SelectedProcess) + 1;
+        if (terminalIndex >= 0 && !item.Descriptor.Definition.ImageReadOnly)
+            selectedIndex = Math.Min(selectedIndex, terminalIndex);
         if (!TryInsertProcess(item.Descriptor, selectedIndex, out string reason)) StatusText = reason;
     }
 
@@ -393,7 +403,7 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
 
         if (!ReferenceEquals(SelectedProcess, document.SelectedProcess))
             SelectedProcess = document.SelectedProcess;
-        RebuildOscilloscopes();
+        RebuildAnalysisProcesses();
         RefreshCommandState();
         if (!document.HasExecuted) return;
 
@@ -445,15 +455,15 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
             }
     }
 
-    private void RebuildOscilloscopes()
+    private void RebuildAnalysisProcesses()
     {
-        OscilloscopeProcess[] oscilloscopes = ActiveDocument?.Processes.OfType<OscilloscopeProcess>().ToArray()
-                                                  ?? Array.Empty<OscilloscopeProcess>();
-        if (ActiveOscilloscopes.SequenceEqual(oscilloscopes)) return;
+        AnalysisProcessBase[] analysisProcesses = ActiveDocument?.Processes.OfType<AnalysisProcessBase>().ToArray()
+                                                  ?? Array.Empty<AnalysisProcessBase>();
+        if (ActiveAnalysisProcesses.SequenceEqual(analysisProcesses)) return;
 
-        ActiveOscilloscopes.Clear();
-        foreach (OscilloscopeProcess scope in oscilloscopes)
-            ActiveOscilloscopes.Add(scope);
+        ActiveAnalysisProcesses.Clear();
+        foreach (AnalysisProcessBase process in analysisProcesses)
+            ActiveAnalysisProcesses.Add(process);
     }
 
     private bool InitializeRenderer(IntPtr handle, int width, int height)

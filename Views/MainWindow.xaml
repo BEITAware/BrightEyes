@@ -111,20 +111,80 @@
                     </TabItem>
                     <TabItem Header="分析">
                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                            <ItemsControl ItemsSource="{Binding ActiveOscilloscopes}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border BorderBrush="{DynamicResource AnalysisBorderBrush}" BorderThickness="1" CornerRadius="3" Margin="3,4" Padding="5">
-                                            <StackPanel>
-                                                <TextBlock Text="{Binding Summary}" FontSize="10" Foreground="{DynamicResource ApplicationMutedTextBrush}" TextWrapping="Wrap" />
-                                                <Image Height="120" Margin="0,5,0,0" Stretch="Fill"
-                                                       Source="{Binding LatestAnalysis, Converter={StaticResource AnalysisDataToBitmapConverter}}" />
-                                                <TextBlock Text="{Binding Diagnostic}" FontSize="9" Foreground="{DynamicResource ApplicationMutedTextBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
-                                            </StackPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                            <Grid>
+                                <TextBlock Text="没有活动的分析过程" Margin="10" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource ApplicationMutedTextBrush}" FontSize="10">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasItems, ElementName=AnalysisProcessList}" Value="False">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <ItemsControl x:Name="AnalysisProcessList" ItemsSource="{Binding ActiveAnalysisProcesses}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border BorderBrush="{DynamicResource AnalysisBorderBrush}" BorderThickness="1" CornerRadius="2"
+                                                    Background="{DynamicResource PipelineSurfaceBrush}" Margin="3,4" SnapsToDevicePixels="True"
+                                                    ToolTip="{Binding Diagnostic}">
+                                                <Grid>
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="25" />
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="22" />
+                                                    </Grid.RowDefinitions>
+                                                    <Border Background="{DynamicResource BureauHeaderBackgroundBrush}"
+                                                            BorderBrush="{DynamicResource BureauHeaderBorderBrush}" BorderThickness="0,0,0,1">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <Rectangle Grid.ColumnSpan="2" Fill="{DynamicResource BureauHeaderTextureBrush}" IsHitTestVisible="False" />
+                                                            <TextBlock Text="{Binding Descriptor.Definition.NameResourceKey, Converter={StaticResource ResourceLookupConverter}}"
+                                                                       Margin="7,0,5,0" VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold"
+                                                                       Foreground="{DynamicResource BureauHeaderTextBrush}" />
+                                                            <Border Grid.Column="1" BorderBrush="{DynamicResource BureauHeaderSeparatorBrush}" BorderThickness="1,0,0,0">
+                                                                <TextBlock Text="{Binding State}" Margin="6,0" VerticalAlignment="Center" FontSize="9"
+                                                                           Foreground="{DynamicResource ApplicationMutedTextBrush}" />
+                                                            </Border>
+                                                            <Border Grid.ColumnSpan="2" Margin="1" BorderBrush="{DynamicResource HighlightEdgeBrush}"
+                                                                    BorderThickness="0,1,0,0" IsHitTestVisible="False" />
+                                                        </Grid>
+                                                    </Border>
+                                                    <Border Grid.Row="1" Margin="5" BorderBrush="{DynamicResource BureauHeaderBorderBrush}"
+                                                            BorderThickness="1" Background="#141C22" SnapsToDevicePixels="True">
+                                                        <Image Height="{Binding PlotHeight}" Stretch="Fill" SnapsToDevicePixels="True"
+                                                               RenderOptions.BitmapScalingMode="NearestNeighbor"
+                                                               Source="{Binding LatestAnalysis, Converter={StaticResource AnalysisDataToBitmapConverter}}">
+                                                            <Image.Style>
+                                                                <Style TargetType="Image">
+                                                                    <Setter Property="HorizontalAlignment" Value="Stretch" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsStrictHistogram}" Value="True">
+                                                                            <Setter Property="Width" Value="112" />
+                                                                            <Setter Property="HorizontalAlignment" Value="Center" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Image.Style>
+                                                        </Image>
+                                                    </Border>
+                                                    <Border Grid.Row="2" Background="{DynamicResource BureauStatusBackgroundBrush}"
+                                                            BorderBrush="{DynamicResource BureauHeaderSeparatorBrush}" BorderThickness="0,1,0,0">
+                                                        <TextBlock Text="{Binding Summary}" Margin="6,0" VerticalAlignment="Center" FontSize="9"
+                                                                   Foreground="{DynamicResource ApplicationMutedTextBrush}" TextTrimming="CharacterEllipsis" />
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
                         </ScrollViewer>
                     </TabItem>
                 </TabControl>
@@ -164,8 +224,11 @@
                                     <ColumnDefinition Width="32" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="72" />
+                                    <!-- Keep a permanent scrollbar gutter so the table header and
+                                         the item status column share the same right-hand origin. -->
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <Rectangle Grid.ColumnSpan="3" Fill="{DynamicResource BureauHeaderTextureBrush}"
+                                <Rectangle Grid.ColumnSpan="4" Fill="{DynamicResource BureauHeaderTextureBrush}"
                                            IsHitTestVisible="False" />
                                 <Border BorderBrush="{DynamicResource BureauHeaderSeparatorBrush}" BorderThickness="0,0,1,0">
                                     <TextBlock Text="#" Margin="6,0" VerticalAlignment="Center"
@@ -177,7 +240,11 @@
                                 </Border>
                                 <TextBlock Grid.Column="2" Text="状态" Margin="6,0" VerticalAlignment="Center"
                                            Foreground="{DynamicResource BureauHeaderTextBrush}" FontWeight="SemiBold" />
-                                <Border Grid.ColumnSpan="3" Margin="1" BorderBrush="{DynamicResource HighlightEdgeBrush}"
+                                <Border Grid.Column="3"
+                                        Width="{DynamicResource {x:Static SystemParameters.VerticalScrollBarWidthKey}}"
+                                        BorderBrush="{DynamicResource BureauHeaderSeparatorBrush}"
+                                        BorderThickness="1,0,0,0" IsHitTestVisible="False" />
+                                <Border Grid.ColumnSpan="4" Margin="1" BorderBrush="{DynamicResource HighlightEdgeBrush}"
                                         BorderThickness="0,1,0,0" IsHitTestVisible="False" />
                             </Grid>
                         </Border>
@@ -223,6 +290,7 @@
                                          ItemTemplate="{DynamicResource ProcessItemTemplate}"
                                          Background="Transparent" BorderThickness="0"
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.VerticalScrollBarVisibility="Visible"
                                          PreviewMouseLeftButtonDown="PipelineList_PreviewMouseLeftButtonDown"
                                          PreviewMouseMove="PipelineList_PreviewMouseMove" />
                             </Grid>

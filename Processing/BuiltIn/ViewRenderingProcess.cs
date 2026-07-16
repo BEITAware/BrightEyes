@@ -4,22 +4,24 @@ using BrightEyes.Processing.Parameters;
 namespace BrightEyes.Processing.BuiltIn;
 
 [ProcessDefinition(
-    BuiltInProcessIds.RenderMapper,
-    "Process_RenderMapper_Name",
-    "Process_RenderMapper_Description",
-    "Color",
+    BuiltInProcessIds.ViewRendering,
+    "Process_ViewRendering_Name",
+    "Process_ViewRendering_Description",
+    "View",
     ProcessDataType.BrightEyesIntermediateImage,
-    ProcessDataType.BrightEyesIntermediateImage,
+    ProcessDataType.DisplayTarget,
     RibbonTab = "Process",
-    RibbonGroup = "Color",
-    RibbonOrder = 20,
-    IconResourceKey = "ProcessIcon.Mapper",
-    AllowMultiple = true,
-    CanDelete = true,
-    CanDisable = true,
+    RibbonGroup = "View",
+    RibbonOrder = 1000,
+    IconResourceKey = "ProcessIcon.View",
+    AllowMultiple = false,
+    CanAdd = false,
+    CanDelete = false,
+    CanDisable = false,
+    CanMove = false,
     ExecutionDomain = ProcessExecutionDomain.Gpu,
-    Version = 2)]
-public sealed class RenderMapperProcess : IntermediateImageProcessBase
+    Version = 3)]
+public sealed class ViewRenderingProcess : IntermediateImageProcessBase
 {
     [ProcessParameter("preset", "Parameter_RenderPreset", ProcessParameterEditor.Enum, 0, AutoValueSource = "BrightEyes default")]
     public ProcessParameter<ToneMappingMode> Preset { get; } = new(ToneMappingMode.ColorCorrectV1);
@@ -36,10 +38,7 @@ public sealed class RenderMapperProcess : IntermediateImageProcessBase
     [ProcessParameter("gamut-mapping", "Parameter_GamutMapping", ProcessParameterEditor.Enum, 4, AutoValueSource = "Color correct v1")]
     public ProcessParameter<GamutMappingMode> GamutMapping { get; } = new(GamutMappingMode.PerceptualCompress);
 
-    [ProcessParameter("ultrahdr-reconstruct", "Parameter_UltraHdrReconstruct", ProcessParameterEditor.Boolean, 5, AutoValueSource = "Gain map metadata")]
-    public ProcessParameter<bool> ReconstructUltraHdr { get; } = new(true);
-
-    [ProcessParameter("background", "Parameter_Background", ProcessParameterEditor.Enum, 6, AutoValueSource = "Application theme")]
+    [ProcessParameter("background", "Parameter_Background", ProcessParameterEditor.Enum, 5, AutoValueSource = "Application theme")]
     public ProcessParameter<BackgroundMode> Background { get; } = new(BackgroundMode.ApplicationBackground);
 
     public override string Summary => $"{Preset.Value} / {TargetPeakNits.Value:0.#} nit / {GamutMapping.Value}";
@@ -59,18 +58,43 @@ public sealed class RenderMapperProcess : IntermediateImageProcessBase
         SetAutomatic(TargetPeakNits, targetPeak, context.Display.IsHdr ? "DXGI display metadata" : "SDR terminal");
         SetAutomatic(ApplyHlgOotf, input.PhotometricModel == PhotometricModel.SceneLinearRelative, "Input photometric model");
         SetAutomatic(GamutMapping, GamutMappingMode.PerceptualCompress, "Color correct v1");
-        SetAutomatic(ReconstructUltraHdr, context.Source?.DetectedMetadata.HasUltraHdrGainMap == true, "Gain map metadata");
         SetAutomatic(Background, BackgroundMode.ApplicationBackground, "Application theme");
-        var output = new ImageSemantics(
-            Renderer.ColorPrimaries.Rec709,
-            Renderer.ColorTransferFunction.Linear,
-            PhotometricModel.DisplayLinearAbsolute,
-            sdrWhite,
-            targetPeak,
-            ColorRange.Full,
-            input.Alpha);
-        SetOutputAutomatic(output, "Render mapper effective output");
-        Diagnostic = "GPU 执行；连续颜色过程可与终端编码融合，逻辑过程仍独立显示。";
+        ImageSemantics output = context.Display.IsHdr
+            ? new(
+                Renderer.ColorPrimaries.Rec2020,
+                Renderer.ColorTransferFunction.Pq,
+                PhotometricModel.DisplayLinearAbsolute,
+                sdrWhite,
+                targetPeak,
+                ColorRange.Full,
+                Renderer.AlphaRepresentation.Opaque)
+            : new(
+                Renderer.ColorPrimaries.Rec709,
+                Renderer.ColorTransferFunction.Srgb,
+                PhotometricModel.DisplayLinearRelative,
+                100.0f,
+                100.0f,
+                ColorRange.Full,
+                Renderer.AlphaRepresentation.Opaque);
+        SetOutputAutomatic(output, "Active display target");
+        Diagnostic = "固定终端过程；把上一张扩展 sRGB 线性图像映射到视图空间并提交显示。";
         NotifySummaryChanged();
+    }
+
+    public override ValueTask ExecuteAsync(ProcessExecutionContext context, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (context.Value is not Renderer.GpuImageFrame input)
+            throw new InvalidOperationException("视图渲染需要一张可用的 GPU 中间图像。");
+
+        var renderer = (Renderer.RendererD3D11?)context.Services.GetService(typeof(Renderer.RendererD3D11))
+            ?? throw new InvalidOperationException("视图渲染服务不可用。");
+        renderer.SetSdrCalibration(SdrWhiteNits.Value, Math.Min(TargetPeakNits.Value, 1000.0f));
+        renderer.SetTargetPeak(TargetPeakNits.Value);
+        renderer.SetRenderMapping(Preset.Value, GamutMapping.Value, ApplyHlgOotf.Value);
+        renderer.SetPresentationBackground(Background.Value);
+        context.Value = renderer.SetPresentationImage(input);
+        Diagnostic = "视图映射参数已提交；终端规范化、映射和编码在一个最终 GPU Pass 中执行。";
+        return ValueTask.CompletedTask;
     }
 }

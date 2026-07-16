@@ -107,6 +107,28 @@
         <GradientStop Color="#FAFCFE" Offset="0" />
         <GradientStop Color="#E2EFF8" Offset="1" />
     </LinearGradientBrush>
-    <SolidColorBrush x:Key="RawConnectionBrush" Color="#2B87A2" />
-    <SolidColorBrush x:Key="IntermediateConnectionBrush" Color="{StaticResource BureauWhiteAccentColor}" />
+    <LinearGradientBrush x:Key="RawConnectionBrush" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#205F70" Offset="0" />
+        <GradientStop Color="#E5FBFC" Offset="0.24" />
+        <GradientStop Color="#5BB3C0" Offset="0.42" />
+        <GradientStop Color="#34869A" Offset="0.74" />
+        <GradientStop Color="#1D596B" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="IntermediateConnectionBrush" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#245D8E" Offset="0" />
+        <GradientStop Color="#E5F3FE" Offset="0.24" />
+        <GradientStop Color="#65A5D2" Offset="0.42" />
+        <GradientStop Color="{StaticResource BureauWhiteAccentColor}" Offset="0.74" />
+        <GradientStop Color="#205581" Offset="1" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="RawConnectionBorderBrush" Color="#286F80" />
+    <SolidColorBrush x:Key="IntermediateConnectionBorderBrush" Color="#356F9E" />
+    <SolidColorBrush x:Key="RawConnectionTextBrush" Color="#275E69" />
+    <SolidColorBrush x:Key="IntermediateConnectionTextBrush" Color="#285F8E" />
+    <LinearGradientBrush x:Key="IntermediateConnectionLabelBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#EDF6FC" Offset="0.46" />
+        <GradientStop Color="#C8DEEE" Offset="0.5" />
+        <GradientStop Color="#E4EFF7" Offset="1" />
+    </LinearGradientBrush>
 </ResourceDictionary>

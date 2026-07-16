@@ -10,5 +10,6 @@
     <BitmapImage x:Key="ProcessIcon.Mapper" UriSource="/BrightEyes;component/Resources/ColorManager.png" />
     <BitmapImage x:Key="ProcessIcon.View" UriSource="/BrightEyes;component/Resources/HDRDisplay.png" />
     <BitmapImage x:Key="ProcessIcon.Scope" UriSource="/BrightEyes;component/Resources/Nodegraph.png" />
+    <BitmapImage x:Key="ProcessIcon.Blur" UriSource="/BrightEyes;component/Resources/FlexiblePort.png" />
     <BitmapImage x:Key="ProcessIcon.Utility" UriSource="/BrightEyes;component/Resources/FlexiblePort.png" />
 </ResourceDictionary>

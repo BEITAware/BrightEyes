@@ -4,22 +4,28 @@ using System.IO;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D11;
 using Vortice.Mathematics;
-using BrightEyes.Processing.BuiltIn;
+using BrightEyes.Processing.Contracts;
 
 namespace BrightEyes.Renderer;
 
 public sealed class GpuOscilloscopeEffect : IDisposable
 {
-    public const int MaximumBinCount = 256 * 128;
+    public const int MaximumPendingReadbacks = 16;
+    public const int WaveformPlaneBinCount = 256 * 128;
+    public const int MaximumBinCount = WaveformPlaneBinCount * 3;
     public const int ReadbackByteCount = MaximumBinCount * sizeof(uint);
 
+    private readonly ID3D11Device _device;
     private readonly ID3D11ComputeShader _shader;
     private readonly ID3D11Buffer _histogram;
     private readonly ID3D11UnorderedAccessView _histogramView;
-    private readonly ID3D11Buffer _readback;
     private readonly ID3D11Buffer _constantBuffer;
-    private bool _pendingReadback;
-    private OscilloscopeKind _pendingKind;
+    private readonly Queue<PendingReadback> _pendingReadbacks = new();
+
+    private sealed record PendingReadback(
+        ID3D11Buffer Buffer,
+        AnalysisKind Kind,
+        AnalysisChannel Channel);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct AnalysisConstants
@@ -32,10 +38,15 @@ public sealed class GpuOscilloscopeEffect : IDisposable
         public float NominalPeakNits;
         public uint AnalysisMode;
         public uint ChannelMode;
+        public uint AlphaMode;
+        public uint Padding0;
+        public uint Padding1;
+        public uint Padding2;
     }
 
     public GpuOscilloscopeEffect(ID3D11Device device)
     {
+        _device = device;
         string shaderPath = Path.Combine(AppContext.BaseDirectory, "Renderer/Shaders/OscilloscopeCS.hlsl");
         _shader = device.CreateComputeShader(Compiler.CompileFromFile(shaderPath, "main", "cs_5_0").Span);
         _histogram = device.CreateBuffer(new BufferDescription
@@ -48,15 +59,6 @@ public sealed class GpuOscilloscopeEffect : IDisposable
             StructureByteStride = sizeof(uint)
         });
         _histogramView = device.CreateUnorderedAccessView(_histogram);
-        _readback = device.CreateBuffer(new BufferDescription
-        {
-            ByteWidth = ReadbackByteCount,
-            Usage = ResourceUsage.Staging,
-            BindFlags = BindFlags.None,
-            CPUAccessFlags = CpuAccessFlags.Read,
-            MiscFlags = ResourceOptionFlags.None,
-            StructureByteStride = sizeof(uint)
-        });
         _constantBuffer = device.CreateBuffer(new BufferDescription
         {
             ByteWidth = Marshal.SizeOf<AnalysisConstants>(),
@@ -68,17 +70,17 @@ public sealed class GpuOscilloscopeEffect : IDisposable
         });
     }
 
-    public void Dispatch(
+    public bool Dispatch(
         ID3D11DeviceContext context,
         ID3D11ShaderResourceView source,
         int width,
         int height,
         int sampleRatePercent,
-        OscilloscopeKind kind,
-        OscilloscopeChannel channel,
+        AnalysisKind kind,
+        AnalysisChannel channel,
         ColorSourceMetadata metadata)
     {
-        if (_pendingReadback) return;
+        if (_pendingReadbacks.Count >= MaximumPendingReadbacks) return false;
         uint sampleStep = (uint)Math.Clamp((int)Math.Ceiling(100.0 / Math.Clamp(sampleRatePercent, 1, 100)), 1, 100);
         var constants = new AnalysisConstants
         {
@@ -89,7 +91,8 @@ public sealed class GpuOscilloscopeEffect : IDisposable
             ReferenceWhiteNits = metadata.ReferenceWhiteNits,
             NominalPeakNits = metadata.NominalPeakNits,
             AnalysisMode = (uint)kind,
-            ChannelMode = (uint)channel
+            ChannelMode = (uint)channel,
+            AlphaMode = (uint)metadata.Alpha
         };
         MappedSubresource mapped = context.Map(_constantBuffer, MapMode.WriteDiscard, MapFlags.None);
         try { Marshal.StructureToPtr(constants, mapped.DataPointer, false); }
@@ -102,19 +105,38 @@ public sealed class GpuOscilloscopeEffect : IDisposable
         context.CSSetConstantBuffers(0, new[] { _constantBuffer });
         context.Dispatch((width + 15) / 16, (height + 15) / 16, 1);
         context.CSSetUnorderedAccessViews(0, new ID3D11UnorderedAccessView[] { null! });
-        context.CopyResource(_readback, _histogram);
-        _pendingKind = kind;
-        _pendingReadback = true;
+        context.CSSetShaderResources(0, new ID3D11ShaderResourceView[] { null! });
+        ID3D11Buffer readback = _device.CreateBuffer(new BufferDescription
+        {
+            ByteWidth = ReadbackByteCount,
+            Usage = ResourceUsage.Staging,
+            BindFlags = BindFlags.None,
+            CPUAccessFlags = CpuAccessFlags.Read,
+            MiscFlags = ResourceOptionFlags.None,
+            StructureByteStride = sizeof(uint)
+        });
+        try
+        {
+            context.CopyResource(readback, _histogram);
+            _pendingReadbacks.Enqueue(new(readback, kind, channel));
+        }
+        catch
+        {
+            readback.Dispose();
+            throw;
+        }
+        return true;
     }
 
     public bool TryReadback(ID3D11DeviceContext context, out float[] values)
     {
         values = Array.Empty<float>();
-        if (!_pendingReadback) return false;
+        if (_pendingReadbacks.Count == 0) return false;
+        PendingReadback pending = _pendingReadbacks.Peek();
         MappedSubresource mapped;
         try
         {
-            mapped = context.Map(_readback, MapMode.Read, MapFlags.DoNotWait);
+            mapped = context.Map(pending.Buffer, MapMode.Read, MapFlags.DoNotWait);
         }
         catch
         {
@@ -123,10 +145,11 @@ public sealed class GpuOscilloscopeEffect : IDisposable
 
         try
         {
-            int resultCount = _pendingKind switch
+            int resultCount = pending.Kind switch
             {
-                OscilloscopeKind.Waveform => 256 * 128,
-                OscilloscopeKind.Vectorscope => 128 * 128,
+                AnalysisKind.Waveform when pending.Channel == AnalysisChannel.Rgb => WaveformPlaneBinCount * 3,
+                AnalysisKind.Waveform => WaveformPlaneBinCount,
+                AnalysisKind.Vectorscope => 128 * 128,
                 _ => 256
             };
             int[] counts = new int[MaximumBinCount];
@@ -136,16 +159,18 @@ public sealed class GpuOscilloscopeEffect : IDisposable
         }
         finally
         {
-            context.Unmap(_readback, 0);
+            context.Unmap(pending.Buffer, 0);
         }
-        _pendingReadback = false;
+        _pendingReadbacks.Dequeue();
+        pending.Buffer.Dispose();
         return true;
     }
 
     public void Dispose()
     {
         _constantBuffer.Dispose();
-        _readback.Dispose();
+        while (_pendingReadbacks.TryDequeue(out PendingReadback? pending))
+            pending.Buffer.Dispose();
         _histogramView.Dispose();
         _histogram.Dispose();
         _shader.Dispose();

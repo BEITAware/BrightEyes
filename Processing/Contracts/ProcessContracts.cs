@@ -35,6 +35,33 @@ public enum ProcessState
     Stale
 }
 
+public enum AnalysisKind
+{
+    Histogram = 0,
+    Waveform = 1,
+    Vectorscope = 2,
+    StrictHistogram = 3
+}
+
+public enum AnalysisChannel
+{
+    Luminance = 0,
+    Red = 1,
+    Green = 2,
+    Blue = 3,
+    Alpha = 4,
+    Rgb = 5
+}
+
+public enum AnalysisPresentation
+{
+    Luminance,
+    SingleChannel,
+    RgbParade,
+    RgbOverlay,
+    Hue
+}
+
 public enum ProcessParameterEditor
 {
     Number,
@@ -107,11 +134,42 @@ public sealed class ProcessDefinitionAttribute : Attribute
     public int RibbonOrder { get; set; }
     public string IconResourceKey { get; set; } = "ProcessIcon.Utility";
     public bool AllowMultiple { get; set; }
+    public bool CanAdd { get; set; } = true;
     public bool CanDelete { get; set; } = true;
     public bool CanDisable { get; set; } = true;
+    public bool CanMove { get; set; } = true;
+
+    /// <summary>
+    /// Declares a transparent observer of the current GPU image. The process
+    /// may inspect the image but must preserve the pipeline value by reference.
+    /// </summary>
+    public bool ImageReadOnly { get; set; }
     public ProcessExecutionDomain ExecutionDomain { get; set; } = ProcessExecutionDomain.Gpu;
     public int Version { get; set; } = 1;
     public Type? ParameterPanelType { get; set; }
+}
+
+public static class ProcessConnectionPolicy
+{
+    public static bool CanAccept(ProcessDataType upstreamType, ProcessDefinitionAttribute downstream)
+    {
+        ArgumentNullException.ThrowIfNull(downstream);
+        return upstreamType == downstream.InputType ||
+               downstream.ImageReadOnly && IsGpuImageType(upstreamType) && IsGpuImageType(downstream.InputType);
+    }
+
+    public static ProcessDataType GetEffectiveOutputType(
+        ProcessDataType upstreamType,
+        ProcessDefinitionAttribute process)
+    {
+        ArgumentNullException.ThrowIfNull(process);
+        return process.ImageReadOnly && IsGpuImageType(upstreamType)
+            ? upstreamType
+            : process.OutputType;
+    }
+
+    public static bool IsGpuImageType(ProcessDataType type) =>
+        type is ProcessDataType.BrightEyesIntermediateImage or ProcessDataType.DisplayTarget;
 }
 
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = true)]

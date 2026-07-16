@@ -1,5 +1,6 @@
 using BrightEyes.Processing.Contracts;
 using BrightEyes.Processing.Parameters;
+using BrightEyes.Processing.Execution;
 using BrightEyes.Renderer;
 
 namespace BrightEyes.Processing.BuiltIn;
@@ -36,9 +37,6 @@ public sealed class DecoderProcess : ProcessBase
 
     [ProcessParameter("alpha-mode", "Parameter_AlphaMode", ProcessParameterEditor.Enum, 4, AutoValueSource = "Container alpha")]
     public ProcessParameter<DecoderAlphaMode> AlphaMode { get; } = new(DecoderAlphaMode.PreserveStraight);
-
-    [ProcessParameter("precision", "Parameter_Precision", ProcessParameterEditor.Enum, 5, AutoValueSource = "Color correct v1")]
-    public ProcessParameter<DecoderPrecision> Precision { get; } = new(DecoderPrecision.Rgba32Float);
 
     [ProcessParameter("input.primaries", "Parameter_InputPrimaries", ProcessParameterEditor.Enum, 20, AutoValueSource = "Immutable source metadata", IsAdvanced = true)]
     public ProcessParameter<ColorPrimaries> InputPrimaries { get; } = new(ColorPrimaries.Rec709);
@@ -85,12 +83,12 @@ public sealed class DecoderProcess : ProcessBase
     public DecoderBackend ActualBackend { get; internal set; } = DecoderBackend.PhotoSauce;
     public string BackendFallbackDetail { get; internal set; } = "";
 
-    public override string Summary => $"{ActualBackend} / R32G32B32A32_FLOAT / linear scRGB";
+    public override string Summary => $"{ActualBackend} / GPU source / deferred linear extended-sRGB";
 
     public ColorSourceMetadata EffectiveInputColorMetadata => new(
         InputTransfer.Value,
         InputPrimaries.Value,
-        InputAlpha.Value,
+        AlphaMode.Value == DecoderAlphaMode.ForceOpaque ? AlphaRepresentation.Opaque : AlphaRepresentation.Straight,
         InputReferenceWhite.Value,
         InputPeak.Value);
 
@@ -111,7 +109,6 @@ public sealed class DecoderProcess : ProcessBase
         Set(Frame, 0, "First frame", MetadataConfidence.Authoritative);
         Set(ApplyExifOrientation, metadata.ExifOrientation != 1, "EXIF orientation", metadata.ExifOrientation == 1 ? MetadataConfidence.Assumed : MetadataConfidence.High);
         Set(AlphaMode, metadata.HasAlpha ? DecoderAlphaMode.PreserveStraight : DecoderAlphaMode.ForceOpaque, "Container alpha", MetadataConfidence.High);
-        Set(Precision, DecoderPrecision.Rgba32Float, "Color correct v1", MetadataConfidence.Authoritative);
         Set(InputPrimaries, metadata.Primaries, metadata.HasCicp ? "CICP/nclx" : metadata.HasIccProfile ? "ICC/PhotoSauce" : "Format default", metadata.HasCicp ? MetadataConfidence.Authoritative : metadata.HasIccProfile ? MetadataConfidence.High : MetadataConfidence.Assumed);
         Set(InputTransfer, metadata.Transfer, metadata.HasCicp ? "CICP/nclx" : metadata.HasIccProfile ? "ICC/PhotoSauce" : "Format default", metadata.HasCicp ? MetadataConfidence.Authoritative : metadata.HasIccProfile ? MetadataConfidence.High : MetadataConfidence.Assumed);
         Set(InputPhotometric, metadata.PhotometricModel, metadata.HasCicp ? "CICP/nclx" : "Format default", metadata.HasCicp ? MetadataConfidence.Authoritative : MetadataConfidence.Assumed);
@@ -125,13 +122,24 @@ public sealed class DecoderProcess : ProcessBase
         Set(OutputReferenceWhite, InputReferenceWhite.Value, "Effective decoder input interpretation", InputReferenceWhite.IsAutomatic ? MetadataConfidence.High : MetadataConfidence.Authoritative);
         Set(OutputPeak, InputPeak.Value, "Effective decoder input interpretation", InputPeak.IsAutomatic ? MetadataConfidence.High : MetadataConfidence.Authoritative);
         Set(OutputRange, ColorRange.Full, "Decoded float contract", MetadataConfidence.Authoritative);
-        Set(OutputAlpha, InputAlpha.Value == AlphaRepresentation.Opaque ? AlphaRepresentation.Opaque : AlphaRepresentation.Straight, "Decoder normalization", MetadataConfidence.High);
+        Set(OutputAlpha, AlphaMode.Value == DecoderAlphaMode.ForceOpaque || InputAlpha.Value == AlphaRepresentation.Opaque
+            ? AlphaRepresentation.Opaque
+            : AlphaRepresentation.Straight, "Decoder normalization", MetadataConfidence.High);
         if (State == ProcessState.NotRun)
         {
             ActualBackend = Backend.Value;
-            Diagnostic = "等待自动执行完整解码；CPU 压缩解码后将只上传 GPU 一次。";
+            Diagnostic = "等待执行压缩解码；像素规范化可与第一个 GPU 消费过程融合。";
         }
         NotifySummaryChanged();
+    }
+
+    public override async ValueTask ExecuteAsync(ProcessExecutionContext context, CancellationToken cancellationToken)
+    {
+        if (context.Value is not RawImage)
+            throw new InvalidOperationException("解码器需要图像文件提供的原始二进制输入。");
+        var service = (IDecoderExecutionService?)context.Services.GetService(typeof(IDecoderExecutionService))
+            ?? throw new InvalidOperationException("解码执行服务不可用。");
+        context.Value = await service.GetGpuImageAsync(this, cancellationToken);
     }
 
     private static DecoderBackend SelectBackend(DetectedImageMetadata metadata)

@@ -111,7 +111,10 @@ public sealed record BrightEyesIntermediateImage(
 }
 
 public sealed record AnalysisData(
-    string AnalysisType,
+    AnalysisKind Kind,
+    AnalysisChannel Channel,
+    AnalysisPresentation Presentation,
+    bool LogarithmicScale,
     ReadOnlyMemory<float> Values,
     ImageSemantics SignalSemantics,
     DateTimeOffset Timestamp);

@@ -61,7 +61,8 @@ public partial class MainWindow : Window
     {
         _dragStart = e.GetPosition(this);
         ListBoxItem? item = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject);
-        _dragCandidate = item?.DataContext as IImageProcess;
+        IImageProcess? process = item?.DataContext as IImageProcess;
+        _dragCandidate = process?.Descriptor.Definition.CanMove == true ? process : null;
     }
 
     private void PipelineList_PreviewMouseMove(object sender, MouseEventArgs e)
@@ -150,11 +151,11 @@ public partial class MainWindow : Window
 
         _dropCommitted = true;
         ClearDropPreview();
-        PipelineHint.Text = placed || payload is IImageProcess
-            ? compatible
+        PipelineHint.Text = !placed
+            ? $"未能放入：{reason}"
+            : compatible
                 ? $"已放入插槽 {index + 1}/{PipelineList.Items.Count + 1}"
-                : $"已放入插槽 {index + 1}/{PipelineList.Items.Count + 1}；错误：{reason}"
-            : $"未能放入：{reason}";
+                : $"已放入插槽 {index + 1}/{PipelineList.Items.Count + 1}；连接警告：{reason}";
     }
 
     private bool GetPlacementCompatibility(object payload, int index, out string reason)

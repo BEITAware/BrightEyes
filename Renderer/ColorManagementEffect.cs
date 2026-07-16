@@ -31,6 +31,7 @@ public sealed class ColorManagementEffect : IDisposable
     private ToneMappingMode _constantToneMapping;
     private GamutMappingMode _constantGamutMapping;
     private bool _constantApplyHlgOotf;
+    private bool _constantInputRequiresHlgOotf;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct ColorConstants
@@ -82,6 +83,7 @@ public sealed class ColorManagementEffect : IDisposable
         ToneMappingMode toneMapping,
         GamutMappingMode gamutMapping,
         bool applyHlgOotf,
+        bool inputRequiresHlgOotf,
         Vector4 sdrBackground,
         Vector4 hdrBackground)
     {
@@ -105,6 +107,7 @@ public sealed class ColorManagementEffect : IDisposable
                        _constantToneMapping != toneMapping ||
                        _constantGamutMapping != gamutMapping ||
                        _constantApplyHlgOotf != applyHlgOotf ||
+                       _constantInputRequiresHlgOotf != inputRequiresHlgOotf ||
                        _constantSdrBackground != sdrBackground ||
                        _constantHdrBackground != hdrBackground;
         if (changed)
@@ -129,7 +132,7 @@ public sealed class ColorManagementEffect : IDisposable
                     sourceMetadata.NominalPeakNits,
                     (float)toneMapping,
                     (float)gamutMapping,
-                    applyHlgOotf ? 1.0f : 0.0f),
+                    applyHlgOotf && inputRequiresHlgOotf ? 1.0f : 0.0f),
                 SdrBackground = sdrBackground,
                 HdrBackground = hdrBackground
             };
@@ -145,6 +148,7 @@ public sealed class ColorManagementEffect : IDisposable
             _constantToneMapping = toneMapping;
             _constantGamutMapping = gamutMapping;
             _constantApplyHlgOotf = applyHlgOotf;
+            _constantInputRequiresHlgOotf = inputRequiresHlgOotf;
             _constantSdrBackground = sdrBackground;
             _constantHdrBackground = hdrBackground;
         }

@@ -111,7 +111,7 @@ float3 DecodeTransfer(float3 encoded)
             e.b <= 0.5 ? e.b * e.b / 3.0 : (exp((e.b - 0.5599107) / 0.1788328) + 0.2846689) / 12.0);
     }
     if (transfer < 3.5)
-        return max(encoded, 0.0) * referenceWhite;
+        return encoded * referenceWhite;
     return pow(max(encoded, 0.0), 2.2) * referenceWhite;
 }
 
@@ -182,15 +182,14 @@ float3 CompressGamut(float3 color, float limit)
 
 float3 ApplyRenderMapper(float3 linear709)
 {
-    float sourceTransfer = SourceParameters.x;
     float targetPeak = max(OutputParameters.y, 1.0);
-    if (sourceTransfer > 1.5 && sourceTransfer < 2.5 && MappingParameters.w > 0.5)
+    if (MappingParameters.w > 0.5)
     {
         float sceneLuminance = dot(max(linear709, 0.0), float3(0.2126, 0.7152, 0.0722));
         float gamma = 1.2 + 0.42 * log10(max(targetPeak, 1000.0) / 1000.0);
         linear709 *= pow(max(sceneLuminance, 1e-6), gamma - 1.0) * targetPeak;
     }
-    else if (sourceTransfer < 0.5 || sourceTransfer > 2.5)
+    else if (SourceParameters.x < 0.5 || SourceParameters.x > 2.5)
     {
         linear709 *= OutputParameters.z / max(SourceParameters.w, 0.001);
     }

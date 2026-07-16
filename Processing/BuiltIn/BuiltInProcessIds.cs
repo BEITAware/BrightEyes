@@ -4,20 +4,20 @@ public static class BuiltInProcessIds
 {
     public const string ImageSource = "brighteyes.image-source";
     public const string Decoder = "brighteyes.decoder";
+    // Kept only for sidecar migration. This process is no longer registered.
     public const string RenderMapper = "brighteyes.render-mapper";
-    public const string View = "brighteyes.view";
-    public const string Oscilloscope = "brighteyes.oscilloscope";
+    public const string ViewRendering = "brighteyes.view";
+    public const string Waveform = "brighteyes.waveform";
+    public const string Histogram = "brighteyes.histogram";
+    public const string Vectorscope = "brighteyes.vectorscope";
+    public const string StrictHistogram = "brighteyes.strict-histogram";
+    public const string GaussianBlur = "brighteyes.gaussian-blur";
 }
 
 public enum DecoderBackend
 {
     PhotoSauce,
     StarwardUltraHdr
-}
-
-public enum DecoderPrecision
-{
-    Rgba32Float
 }
 
 public enum DecoderAlphaMode
@@ -48,26 +48,18 @@ public enum BackgroundMode
     White
 }
 
-public enum OscilloscopeKind
+public enum WaveformDisplayMode
 {
-    Histogram,
-    Waveform,
-    Vectorscope
+    Luminance,
+    ParadeRgb,
+    OverlayRgb
 }
 
-public enum OscilloscopeChannel
+public enum HistogramChannel
 {
-    Rgb,
     Luminance,
     Red,
     Green,
     Blue,
     Alpha
-}
-
-public enum SignalUnit
-{
-    ScRgb,
-    Nits,
-    LinearValue
 }

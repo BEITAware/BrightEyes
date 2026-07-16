@@ -107,6 +107,7 @@ public sealed class ImageDecodeService
         byte[] rgba = new byte[checked(stride * pixels.Height)];
         pixels.CopyPixels(new Rectangle(0, 0, pixels.Width, pixels.Height), stride, rgba);
         ConvertBgraToRgbaInPlace(rgba, cancellationToken);
+        ApplyAlphaMode(rgba, decoder.AlphaMode.Value, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         return new(
             pixels.Width,
@@ -144,6 +145,26 @@ public sealed class ImageDecodeService
         {
             if ((offset & 0xfffff) == 0) cancellationToken.ThrowIfCancellationRequested();
             (pixels[offset], pixels[offset + 2]) = (pixels[offset + 2], pixels[offset]);
+        }
+    }
+
+    private static void ApplyAlphaMode(byte[] pixels, DecoderAlphaMode mode, CancellationToken cancellationToken)
+    {
+        if (mode == DecoderAlphaMode.PreserveStraight) return;
+        for (int offset = 0; offset < pixels.Length; offset += 4)
+        {
+            if ((offset & 0xfffff) == 0) cancellationToken.ThrowIfCancellationRequested();
+            byte alpha = pixels[offset + 3];
+            if (mode == DecoderAlphaMode.ForceOpaque)
+            {
+                pixels[offset + 3] = byte.MaxValue;
+                continue;
+            }
+            if (alpha is 0 or byte.MaxValue) continue;
+            float inverseAlpha = byte.MaxValue / (float)alpha;
+            pixels[offset] = (byte)Math.Min(byte.MaxValue, MathF.Round(pixels[offset] * inverseAlpha));
+            pixels[offset + 1] = (byte)Math.Min(byte.MaxValue, MathF.Round(pixels[offset + 1] * inverseAlpha));
+            pixels[offset + 2] = (byte)Math.Min(byte.MaxValue, MathF.Round(pixels[offset + 2] * inverseAlpha));
         }
     }
 

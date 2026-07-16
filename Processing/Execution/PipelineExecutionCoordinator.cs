@@ -25,114 +25,85 @@ public sealed class PipelineExecutionCoordinator
         long generation = ++document.ExecutionGeneration;
         CancellationToken token = cancellation.Token;
 
-        IImageProcess? hardError = document.Processes.FirstOrDefault(process => process.IncomingConnectionSeverity == ConnectionSeverity.HardError);
+        IImageProcess? hardError = document.Processes.FirstOrDefault(
+            process => process.IsEnabled && process.IncomingConnectionSeverity == ConnectionSeverity.HardError);
         if (hardError is not null)
         {
             MarkFailure(document, hardError, hardError.IncomingConnectionMessage);
             return;
         }
 
-        DecoderProcess? decoder = document.Processes.OfType<DecoderProcess>().FirstOrDefault(process => process.IsEnabled);
-        ViewProcess? view = document.Processes.OfType<ViewProcess>().FirstOrDefault(process => process.IsEnabled);
-        if (decoder is null)
-        {
-            MarkFailure(document, null, "流程没有可执行的解码器；保留最后有效画面。 ");
-            return;
-        }
-        if (view is null)
-        {
-            MarkFailure(document, null, "流程没有启用的视图过程；保留最后有效画面。 ");
-            return;
-        }
+        var services = new PipelineExecutionServices(renderer, _decoder, document, forceDecode, generation);
+        var context = new ProcessExecutionContext(document.Source, document.DisplayMetadata, document.Source, services);
+        var transientImages = new List<GpuImageFrame>();
+        IImageProcess? runningProcess = null;
 
         try
         {
             foreach (IImageProcess process in document.Processes.Where(process => process.IsEnabled))
-            {
-                if (process.State != ProcessState.Warning) process.State = ProcessState.Pending;
-            }
+                process.State = ProcessState.Pending;
 
-            if (forceDecode || document.DecodedFrame is null)
+            foreach (IImageProcess process in document.Processes.Where(process => process.IsEnabled))
             {
-                decoder.State = ProcessState.Running;
-                decoder.Diagnostic = "正在执行压缩解码；GPU 上传尚未发生。";
-                DecodedImageFrame decoded = await _decoder.DecodeAsync(document.Source, decoder, token).ConfigureAwait(true);
-                if (generation != document.ExecutionGeneration || token.IsCancellationRequested) return;
-                decoder.ActualBackend = decoded.ActualBackend;
-                decoder.BackendFallbackDetail = decoded.UsedFallback ? decoded.Diagnostic : "";
-                decoder.Diagnostic = decoded.Diagnostic + $" CPU 解码缓冲：{decoded.CpuByteCount / (1024.0 * 1024.0):0.##} MiB。";
-                decoder.State = decoded.UsedFallback ? ProcessState.Warning : ProcessState.Valid;
-                document.DecodedFrame = decoded;
-                renderer.UploadDecodedFrame(decoded);
-            }
-
-            if (generation != document.ExecutionGeneration || token.IsCancellationRequested) return;
-            ApplyMapperBeforeView(document, view, renderer);
-            var executionServices = new PipelineExecutionServices(renderer, _decoder);
-            var executionContext = new ProcessExecutionContext(
-                document.Source,
-                document.DisplayMetadata,
-                document.DecodedFrame,
-                executionServices);
-            int decoderIndex = document.Processes.IndexOf(decoder);
-            foreach (IImageProcess process in document.Processes.Skip(decoderIndex + 1).Where(process => process.IsEnabled))
-                await process.ExecuteAsync(executionContext, token).ConfigureAwait(true);
-            SynchronizationContext? synchronizationContext = SynchronizationContext.Current;
-            foreach (OscilloscopeProcess scope in document.Processes.OfType<OscilloscopeProcess>().Where(process => process.IsEnabled))
-            {
-                bool requested = renderer.RequestAnalysis(scope.SampleRatePercent.Value, scope.Kind.Value, scope.Channel.Value, values =>
+                token.ThrowIfCancellationRequested();
+                if (generation != document.ExecutionGeneration) throw new OperationCanceledException(token);
+                runningProcess = process;
+                process.State = ProcessState.Running;
+                object? inputValue = context.Value;
+                await process.ExecuteAsync(context, token).ConfigureAwait(true);
+                if (process.Descriptor.Definition.ImageReadOnly && !ReferenceEquals(inputValue, context.Value))
                 {
-                    if (synchronizationContext is null)
-                        scope.AcceptAnalysis(values);
-                    else
-                        synchronizationContext.Post(_ => scope.AcceptAnalysis(values), null);
-                });
-                if (!requested)
-                {
-                    scope.State = ProcessState.Warning;
-                    scope.Diagnostic = "GPU 分析功能不可用；图像解码与显示不受影响。";
+                    context.Value = inputValue;
+                    throw new InvalidOperationException(
+                        $"ImageReadOnly 过程 {process.Descriptor.Definition.StableId} 替换了管线图像值。只读过程必须保持输入引用不变。");
                 }
+
+                GpuImageFrame? produced = context.Value switch
+                {
+                    GpuImageFrame image => image,
+                    DisplayTargetFrame target => target.RetainedSource,
+                    _ => null
+                };
+                if (produced is not null &&
+                    !ReferenceEquals(produced, document.DecodedGpuFrame) &&
+                    !transientImages.Contains(produced))
+                    transientImages.Add(produced);
+
+                if (process.State == ProcessState.Running)
+                    process.State = process.IncomingConnectionSeverity == ConnectionSeverity.SemanticWarning
+                        ? ProcessState.Warning
+                        : ProcessState.Valid;
             }
-            bool reachedView = false;
-            foreach (IImageProcess process in document.Processes)
-            {
-                if (!process.IsEnabled) continue;
-                if (ReferenceEquals(process, view)) reachedView = true;
-                if (process.State is ProcessState.Error or ProcessState.Warning) continue;
-                process.State = ProcessState.Valid;
-                if (process is OscilloscopeProcess)
-                    process.Diagnostic = reachedView
-                        ? "GPU 分析请求位于视图之后；观察透传数据而非 swap-chain 量化结果。"
-                        : "GPU 分析请求已排队；仅紧凑统计允许回读。";
-            }
+
+            if (generation != document.ExecutionGeneration || token.IsCancellationRequested)
+                throw new OperationCanceledException(token);
+            if (context.Value is not DisplayTargetFrame displayTarget)
+                throw new InvalidOperationException("过程没有到达固定的视图渲染终端；保留最后有效画面。");
+
+            GpuImageFrame? oldFinal = document.FinalGpuFrame;
+            document.FinalGpuFrame = ReferenceEquals(displayTarget.RetainedSource, document.DecodedGpuFrame)
+                ? null
+                : displayTarget.RetainedSource;
+            foreach (GpuImageFrame image in transientImages.Where(image => !ReferenceEquals(image, document.FinalGpuFrame)))
+                image.Dispose();
+            transientImages.Clear();
+            if (oldFinal is not null && !ReferenceEquals(oldFinal, document.FinalGpuFrame))
+                oldFinal.Dispose();
+
             document.HasExecuted = true;
             document.HasLastValidFrame = true;
         }
         catch (OperationCanceledException)
         {
-            foreach (IImageProcess process in document.Processes.Where(process => process.State == ProcessState.Running))
+            foreach (GpuImageFrame image in transientImages) image.Dispose();
+            foreach (IImageProcess process in document.Processes.Where(process => process.State is ProcessState.Running or ProcessState.Pending))
                 process.State = ProcessState.Stale;
         }
         catch (Exception ex)
         {
-            MarkFailure(document, decoder, ex.GetBaseException().Message);
+            foreach (GpuImageFrame image in transientImages) image.Dispose();
+            MarkFailure(document, runningProcess, ex.GetBaseException().Message);
         }
-    }
-
-    private static void ApplyMapperBeforeView(ImageDocument document, ViewProcess view, RendererD3D11 renderer)
-    {
-        int viewIndex = document.Processes.IndexOf(view);
-        RenderMapperProcess? mapper = document.Processes.Take(viewIndex)
-            .OfType<RenderMapperProcess>()
-            .LastOrDefault(process => process.IsEnabled);
-        if (mapper is null)
-        {
-            renderer.SetSdrCalibration(100.0f, 100.0f);
-            return;
-        }
-        renderer.SetSdrCalibration(mapper.SdrWhiteNits.Value, Math.Min(mapper.TargetPeakNits.Value, 1000.0f));
-        renderer.SetTargetPeak(mapper.TargetPeakNits.Value);
-        renderer.SetRenderMapping(mapper.Preset.Value, mapper.GamutMapping.Value, mapper.ApplyHlgOotf.Value);
     }
 
     private static void MarkFailure(ImageDocument document, IImageProcess? failedProcess, string message)
@@ -142,28 +113,73 @@ public sealed class PipelineExecutionCoordinator
             failedProcess.State = ProcessState.Error;
             failedProcess.Diagnostic = message;
         }
-        foreach (IImageProcess process in document.Processes.Where(process => !ReferenceEquals(process, failedProcess) && process.State is ProcessState.Running or ProcessState.Pending))
+        foreach (IImageProcess process in document.Processes.Where(process =>
+                     !ReferenceEquals(process, failedProcess) && process.State is ProcessState.Running or ProcessState.Pending))
         {
             process.State = document.HasLastValidFrame ? ProcessState.Stale : ProcessState.NotRun;
             process.Diagnostic = document.HasLastValidFrame ? "执行失败，中央区域保留最后有效画面。" : "上游执行失败。";
         }
     }
 
-    private sealed class PipelineExecutionServices : IServiceProvider
+    private sealed class PipelineExecutionServices : IServiceProvider, IDecoderExecutionService
     {
         private readonly RendererD3D11 _renderer;
         private readonly ImageDecodeService _decoder;
+        private readonly ImageDocument _document;
+        private readonly bool _forceDecode;
+        private readonly long _generation;
 
-        public PipelineExecutionServices(RendererD3D11 renderer, ImageDecodeService decoder)
+        public PipelineExecutionServices(
+            RendererD3D11 renderer,
+            ImageDecodeService decoder,
+            ImageDocument document,
+            bool forceDecode,
+            long generation)
         {
             _renderer = renderer;
             _decoder = decoder;
+            _document = document;
+            _forceDecode = forceDecode;
+            _generation = generation;
+        }
+
+        public async ValueTask<GpuImageFrame> GetGpuImageAsync(
+            DecoderProcess decoder,
+            CancellationToken cancellationToken)
+        {
+            bool requiresDecode = _forceDecode || _document.DecodedFrame is null || _document.DecodedGpuFrame is null;
+            if (!requiresDecode)
+            {
+                decoder.State = ProcessState.Cached;
+                decoder.Diagnostic = "复用该文档的解码 GPU 源纹理；未发生 CPU 解码或重复上传。";
+                return _document.DecodedGpuFrame!;
+            }
+
+            decoder.Diagnostic = "正在执行压缩解码；尚未提交 GPU 源纹理。";
+            DecodedImageFrame decoded = await _decoder.DecodeAsync(_document.Source, decoder, cancellationToken).ConfigureAwait(true);
+            if (_generation != _document.ExecutionGeneration)
+                throw new OperationCanceledException(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            GpuImageFrame gpuImage = _renderer.CreateGpuImageFrame(decoded);
+            GpuImageFrame? oldGpuImage = _document.DecodedGpuFrame;
+            _document.DecodedFrame = decoded;
+            _document.DecodedGpuFrame = gpuImage;
+            oldGpuImage?.Dispose();
+
+            decoder.ActualBackend = decoded.ActualBackend;
+            decoder.BackendFallbackDetail = decoded.UsedFallback ? decoded.Diagnostic : "";
+            decoder.Diagnostic = decoded.Diagnostic +
+                                 $" CPU 缓冲：{decoded.CpuByteCount / (1024.0 * 1024.0):0.##} MiB；已创建一次 GPU 源纹理。";
+            if (decoded.UsedFallback) decoder.State = ProcessState.Warning;
+            return gpuImage;
         }
 
         public object? GetService(Type serviceType)
         {
             if (serviceType.IsInstanceOfType(_renderer)) return _renderer;
             if (serviceType.IsInstanceOfType(_decoder)) return _decoder;
+            if (serviceType.IsInstanceOfType(this)) return this;
             return null;
         }
     }

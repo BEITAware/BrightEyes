@@ -11,6 +11,10 @@ cbuffer AnalysisConstants : register(b0)
     float NominalPeakNits;
     uint AnalysisMode;
     uint ChannelMode;
+    uint AlphaMode;
+    uint Padding0;
+    uint Padding1;
+    uint Padding2;
 };
 
 float SrgbToLinear(float value)
@@ -56,20 +60,33 @@ void main(uint3 dispatchId : SV_DispatchThreadID)
 
     float4 encodedSample = SourceTexture.Load(int3(dispatchId.xy, 0));
     float3 encoded = encodedSample.rgb;
+    if (AlphaMode == 1u && encodedSample.a > 1e-6)
+        encoded /= encodedSample.a;
     float3 linearRgb = float3(
         DecodeNormalized(encoded.r),
         DecodeNormalized(encoded.g),
         DecodeNormalized(encoded.b));
     float luminance = dot(linearRgb, float3(0.2126, 0.7152, 0.0722));
-    float signal = ChannelMode == 2u ? linearRgb.r :
-                   ChannelMode == 3u ? linearRgb.g :
-                   ChannelMode == 4u ? linearRgb.b :
-                   ChannelMode == 5u ? encodedSample.a : luminance;
+    float signal = ChannelMode == 1u ? linearRgb.r :
+                   ChannelMode == 2u ? linearRgb.g :
+                   ChannelMode == 3u ? linearRgb.b :
+                   ChannelMode == 4u ? encodedSample.a : luminance;
 
     uint bin;
     if (AnalysisMode == 1u)
     {
         uint x = min(dispatchId.x * 256u / max(Width, 1u), 255u);
+        if (ChannelMode == 5u)
+        {
+            [unroll]
+            for (uint component = 0u; component < 3u; component++)
+            {
+                uint componentY = (uint)round(saturate(linearRgb[component]) * 127.0);
+                uint componentBin = component * (256u * 128u) + componentY * 256u + x;
+                InterlockedAdd(Histogram[componentBin], 1u);
+            }
+            return;
+        }
         uint y = (uint)round(saturate(signal) * 127.0);
         bin = y * 256u + x;
     }

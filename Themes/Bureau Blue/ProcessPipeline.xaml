@@ -35,8 +35,101 @@
         <GradientStop Color="#FFFCF4" Offset="0" />
         <GradientStop Color="#FBECCB" Offset="1" />
     </LinearGradientBrush>
-    <SolidColorBrush x:Key="RawConnectionBrush" Color="#22AFC7" />
-    <SolidColorBrush x:Key="IntermediateConnectionBrush" Color="#7C69C7" />
+    <!-- Narrow type lanes use a lateral metallic highlight so they still read as
+         Bureau chrome instead of a flat category stripe. -->
+    <LinearGradientBrush x:Key="RawConnectionBrush" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#08758A" Offset="0" />
+        <GradientStop Color="#C6FBFF" Offset="0.24" />
+        <GradientStop Color="#36C5D6" Offset="0.42" />
+        <GradientStop Color="#159BB4" Offset="0.74" />
+        <GradientStop Color="#075F75" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="IntermediateConnectionBrush" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#44358B" Offset="0" />
+        <GradientStop Color="#E1DDFF" Offset="0.24" />
+        <GradientStop Color="#9384E4" Offset="0.42" />
+        <GradientStop Color="#6654BC" Offset="0.74" />
+        <GradientStop Color="#3C2E83" Offset="1" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="RawConnectionBorderBrush" Color="#087087" />
+    <SolidColorBrush x:Key="IntermediateConnectionBorderBrush" Color="#50419A" />
+    <SolidColorBrush x:Key="RawConnectionTextBrush" Color="#145B69" />
+    <SolidColorBrush x:Key="IntermediateConnectionTextBrush" Color="#544A7A" />
+    <LinearGradientBrush x:Key="RawConnectionLabelBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FBFFFF" Offset="0" />
+        <GradientStop Color="#E9FAFC" Offset="0.46" />
+        <GradientStop Color="#C2EAF0" Offset="0.5" />
+        <GradientStop Color="#E0F5F7" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="IntermediateConnectionLabelBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FEFDFF" Offset="0" />
+        <GradientStop Color="#F1EEFC" Offset="0.46" />
+        <GradientStop Color="#D2CCEC" Offset="0.5" />
+        <GradientStop Color="#E8E4F5" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ErrorConnectionLaneBrush" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#7C1724" Offset="0" />
+        <GradientStop Color="#FFD4D8" Offset="0.24" />
+        <GradientStop Color="#E45B67" Offset="0.42" />
+        <GradientStop Color="#B72C3B" Offset="0.76" />
+        <GradientStop Color="#721522" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ErrorConnectionLabelBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFDFD" Offset="0" />
+        <GradientStop Color="#FDEBED" Offset="0.46" />
+        <GradientStop Color="#EFC3C8" Offset="0.5" />
+        <GradientStop Color="#F8E1E4" Offset="1" />
+    </LinearGradientBrush>
+
+    <!-- Glossy badge faces share the same split highlight used by classic Aero
+         command surfaces, while semantic state is carried by restrained tint. -->
+    <LinearGradientBrush x:Key="ProcessStatusColumnBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FAFCFD" Offset="0" />
+        <GradientStop Color="#EEF2F5" Offset="0.48" />
+        <GradientStop Color="#DCE2E7" Offset="0.52" />
+        <GradientStop Color="#EFF2F4" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessGripColumnBrush" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#E7EDF1" Offset="0" />
+        <GradientStop Color="#FAFCFD" Offset="0.42" />
+        <GradientStop Color="#DDE4E9" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessBadgeNeutralBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#F2F5F7" Offset="0.46" />
+        <GradientStop Color="#CCD4DA" Offset="0.5" />
+        <GradientStop Color="#E5EAED" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessBadgeBlueBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#EAF6FE" Offset="0.46" />
+        <GradientStop Color="#AFCFE7" Offset="0.5" />
+        <GradientStop Color="#D5EAF7" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessBadgeGreenBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#EDF9E8" Offset="0.46" />
+        <GradientStop Color="#B5D99D" Offset="0.5" />
+        <GradientStop Color="#DBEFCB" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessBadgeAmberBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#FFF8DF" Offset="0.46" />
+        <GradientStop Color="#E8C470" Offset="0.5" />
+        <GradientStop Color="#F8E7B1" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="ProcessBadgeRedBrush" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#FDEDEF" Offset="0.46" />
+        <GradientStop Color="#E6A1A9" Offset="0.5" />
+        <GradientStop Color="#F5CDD2" Offset="1" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="ProcessBadgeHighlightBrush" Color="#CFFFFFFF" />
+    <SolidColorBrush x:Key="ProcessBadgeNeutralBorderBrush" Color="#98A6B0" />
+    <SolidColorBrush x:Key="ProcessBadgeBlueBorderBrush" Color="#73A6C9" />
+    <SolidColorBrush x:Key="ProcessBadgeGreenBorderBrush" Color="#78A75C" />
+    <SolidColorBrush x:Key="ProcessBadgeAmberBorderBrush" Color="#B18732" />
+    <SolidColorBrush x:Key="ProcessBadgeRedBorderBrush" Color="#B85B66" />
     <SolidColorBrush x:Key="WarningConnectionBrush" Color="#D97818" />
     <SolidColorBrush x:Key="ErrorConnectionBrush" Color="#C43E4B" />
 
@@ -122,6 +215,9 @@
             </Setter.Value>
         </Setter>
         <Style.Triggers>
+            <DataTrigger Binding="{Binding Descriptor.Definition.CanMove}" Value="False">
+                <Setter Property="Cursor" Value="Arrow" />
+            </DataTrigger>
             <DataTrigger Binding="{Binding Descriptor.Definition.CanDelete}" Value="False">
                 <Setter Property="Cursor" Value="Arrow" />
             </DataTrigger>
@@ -150,17 +246,25 @@
                 </Border.ContextMenu>
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="4" />
-                    <ColumnDefinition Width="28" />
+                    <ColumnDefinition Width="6" />
+                    <ColumnDefinition Width="26" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="72" />
                 </Grid.ColumnDefinitions>
 
-                <Border x:Name="ConnectionLane" ToolTip="{Binding IncomingConnectionMessage}">
-                    <Border x:Name="ConnectionLine" Background="{DynamicResource IntermediateConnectionBrush}" />
+                <Border x:Name="ConnectionLane" Background="{DynamicResource IntermediateConnectionBorderBrush}"
+                        BorderBrush="{DynamicResource IntermediateConnectionBorderBrush}" BorderThickness="0,0,1,0"
+                        ToolTip="{Binding IncomingConnectionMessage}">
+                    <Grid>
+                        <Border x:Name="ConnectionLine" Margin="0,1,1,1"
+                                Background="{DynamicResource IntermediateConnectionBrush}" />
+                        <Border Margin="1,2,2,2" BorderBrush="#9FFFFFFF"
+                                BorderThickness="1,1,0,0" IsHitTestVisible="False" />
+                    </Grid>
                 </Border>
 
-                <Border Grid.Column="1" Background="#EEF2F5" BorderBrush="#D2DADF" BorderThickness="0,0,1,0"
+                <Border Grid.Column="1" Background="{DynamicResource ProcessGripColumnBrush}"
+                        BorderBrush="#C0CAD1" BorderThickness="0,0,1,0"
                         ToolTip="按住整行即可拖动">
                     <TextBlock Text="&#x2261;" HorizontalAlignment="Center" VerticalAlignment="Center"
                                FontSize="17" Foreground="#657684" />
@@ -199,21 +303,45 @@
                                 </MultiBinding>
                             </TextBlock.Text>
                         </TextBlock>
-                        <Border x:Name="ConnectionLabel" Grid.Column="1" Margin="6,0,0,0" Padding="4,0"
-                                Background="#EEF0F5" BorderBrush="#B8B2D5" BorderThickness="1">
-                            <TextBlock Text="{Binding IncomingConnectionLabel}" FontSize="9" Foreground="#544A7A" />
+                        <Border x:Name="ConnectionLabel" Grid.Column="1" Margin="6,0,0,0" Padding="1"
+                                Background="{DynamicResource IntermediateConnectionLabelBrush}"
+                                BorderBrush="{DynamicResource IntermediateConnectionBorderBrush}"
+                                BorderThickness="1" CornerRadius="1">
+                            <Grid>
+                                <Border BorderBrush="{DynamicResource ProcessBadgeHighlightBrush}"
+                                        BorderThickness="1,1,1,0" CornerRadius="1" IsHitTestVisible="False" />
+                                <TextBlock x:Name="ConnectionLabelText" Text="{Binding IncomingConnectionLabel}"
+                                           Margin="3,-1,3,0" FontSize="9"
+                                           Foreground="{DynamicResource IntermediateConnectionTextBrush}" />
+                            </Grid>
                         </Border>
                     </Grid>
                 </Grid>
 
-                <Border Grid.Column="3" Background="#F2F4F6" BorderBrush="#D2DADF" BorderThickness="1,0,0,0">
+                <Border Grid.Column="3" Background="{DynamicResource ProcessStatusColumnBrush}"
+                        BorderBrush="#C0CAD1" BorderThickness="1,0,0,0">
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <Border x:Name="StateBadge" Padding="4,1" Background="#DCE8F2" BorderBrush="#AFC2D1" BorderThickness="1">
-                            <TextBlock Text="{Binding State}" FontSize="9" Foreground="{DynamicResource ProcessTextBrush}"
-                                       TextTrimming="CharacterEllipsis" MaxWidth="58" />
+                        <Border x:Name="StateBadge" Padding="1" Background="{DynamicResource ProcessBadgeNeutralBrush}"
+                                BorderBrush="{DynamicResource ProcessBadgeNeutralBorderBrush}"
+                                BorderThickness="1" CornerRadius="1">
+                            <Grid>
+                                <Border BorderBrush="{DynamicResource ProcessBadgeHighlightBrush}"
+                                        BorderThickness="1,1,1,0" CornerRadius="1" IsHitTestVisible="False" />
+                                <TextBlock x:Name="StateBadgeText" Text="{Binding State}" Margin="3,0"
+                                           FontSize="9" Foreground="{DynamicResource ProcessTextBrush}"
+                                           TextTrimming="CharacterEllipsis" MaxWidth="54" />
+                            </Grid>
                         </Border>
-                        <TextBlock x:Name="OverrideBadge" Text="手动" Margin="0,3,0,0" HorizontalAlignment="Center"
-                                   FontSize="9" Foreground="#9A4E08" Visibility="Collapsed" />
+                        <Border x:Name="OverrideBadge" Margin="0,3,0,0" Padding="1"
+                                HorizontalAlignment="Center" Background="{DynamicResource ProcessBadgeAmberBrush}"
+                                BorderBrush="{DynamicResource ProcessBadgeAmberBorderBrush}"
+                                BorderThickness="1" CornerRadius="1" Visibility="Collapsed">
+                            <Grid>
+                                <Border BorderBrush="{DynamicResource ProcessBadgeHighlightBrush}"
+                                        BorderThickness="1,1,1,0" CornerRadius="1" IsHitTestVisible="False" />
+                                <TextBlock Text="手动" Margin="3,-1,3,0" FontSize="9" Foreground="#754306" />
+                            </Grid>
+                        </Border>
                         <TextBlock x:Name="WarningOverlay" Text="! 检查" Margin="0,3,0,0" HorizontalAlignment="Center"
                                    FontSize="9" FontWeight="Bold" Foreground="#A9580B" Visibility="Collapsed" />
                     </StackPanel>
@@ -223,8 +351,11 @@
         <DataTemplate.Triggers>
             <DataTrigger Binding="{Binding Descriptor.Definition.InputType}" Value="RawImage">
                 <Setter TargetName="ConnectionLine" Property="Background" Value="{DynamicResource RawConnectionBrush}" />
-                <Setter TargetName="ConnectionLabel" Property="BorderBrush" Value="#73C5D3" />
-                <Setter TargetName="ConnectionLabel" Property="Background" Value="#E9F8FA" />
+                <Setter TargetName="ConnectionLane" Property="Background" Value="{DynamicResource RawConnectionBorderBrush}" />
+                <Setter TargetName="ConnectionLane" Property="BorderBrush" Value="{DynamicResource RawConnectionBorderBrush}" />
+                <Setter TargetName="ConnectionLabel" Property="BorderBrush" Value="{DynamicResource RawConnectionBorderBrush}" />
+                <Setter TargetName="ConnectionLabel" Property="Background" Value="{DynamicResource RawConnectionLabelBrush}" />
+                <Setter TargetName="ConnectionLabelText" Property="Foreground" Value="{DynamicResource RawConnectionTextBrush}" />
             </DataTrigger>
             <DataTrigger Binding="{Binding IncomingConnectionSeverity}" Value="None">
                 <Setter TargetName="ConnectionLane" Property="Visibility" Value="Collapsed" />
@@ -234,9 +365,40 @@
                 <Setter TargetName="WarningOverlay" Property="Visibility" Value="Visible" />
             </DataTrigger>
             <DataTrigger Binding="{Binding IncomingConnectionSeverity}" Value="HardError">
-                <Setter TargetName="ConnectionLine" Property="Background" Value="{StaticResource ErrorConnectionBrush}" />
+                <Setter TargetName="ConnectionLine" Property="Background" Value="{StaticResource ErrorConnectionLaneBrush}" />
+                <Setter TargetName="ConnectionLane" Property="Background" Value="{StaticResource ErrorConnectionBrush}" />
                 <Setter TargetName="ConnectionLabel" Property="BorderBrush" Value="{StaticResource ErrorConnectionBrush}" />
+                <Setter TargetName="ConnectionLabel" Property="Background" Value="{StaticResource ErrorConnectionLabelBrush}" />
+                <Setter TargetName="ConnectionLabelText" Property="Foreground" Value="{StaticResource ErrorConnectionBrush}" />
                 <Setter TargetName="ProcessBlock" Property="BorderBrush" Value="{StaticResource ErrorConnectionBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding State}" Value="Pending">
+                <Setter TargetName="StateBadge" Property="Background" Value="{DynamicResource ProcessBadgeBlueBrush}" />
+                <Setter TargetName="StateBadge" Property="BorderBrush" Value="{DynamicResource ProcessBadgeBlueBorderBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding State}" Value="Running">
+                <Setter TargetName="StateBadge" Property="Background" Value="{DynamicResource ProcessBadgeBlueBrush}" />
+                <Setter TargetName="StateBadge" Property="BorderBrush" Value="{DynamicResource ProcessBadgeBlueBorderBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding State}" Value="Cached">
+                <Setter TargetName="StateBadge" Property="Background" Value="{DynamicResource ProcessBadgeBlueBrush}" />
+                <Setter TargetName="StateBadge" Property="BorderBrush" Value="{DynamicResource ProcessBadgeBlueBorderBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding State}" Value="Valid">
+                <Setter TargetName="StateBadge" Property="Background" Value="{DynamicResource ProcessBadgeGreenBrush}" />
+                <Setter TargetName="StateBadge" Property="BorderBrush" Value="{DynamicResource ProcessBadgeGreenBorderBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding State}" Value="Warning">
+                <Setter TargetName="StateBadge" Property="Background" Value="{DynamicResource ProcessBadgeAmberBrush}" />
+                <Setter TargetName="StateBadge" Property="BorderBrush" Value="{DynamicResource ProcessBadgeAmberBorderBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding State}" Value="Stale">
+                <Setter TargetName="StateBadge" Property="Background" Value="{DynamicResource ProcessBadgeAmberBrush}" />
+                <Setter TargetName="StateBadge" Property="BorderBrush" Value="{DynamicResource ProcessBadgeAmberBorderBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding State}" Value="Error">
+                <Setter TargetName="StateBadge" Property="Background" Value="{DynamicResource ProcessBadgeRedBrush}" />
+                <Setter TargetName="StateBadge" Property="BorderBrush" Value="{DynamicResource ProcessBadgeRedBorderBrush}" />
             </DataTrigger>
             <DataTrigger Binding="{Binding HasUserOverrides}" Value="True">
                 <Setter TargetName="OverrideBadge" Property="Visibility" Value="Visible" />
