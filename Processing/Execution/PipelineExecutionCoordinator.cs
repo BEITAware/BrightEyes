@@ -42,15 +42,13 @@ public sealed class PipelineExecutionCoordinator
                 runningProcess = process;
                 process.State = ProcessState.Running;
                 ProcessDefinitionAttribute definition = process.Descriptor.Definition;
-                if (context.DisplayTarget is null &&
-                    context.PendingColorConversions.Count > 0 &&
-                    (definition.RequiresIntermediateTexture || definition.Role == ProcessRole.Observer))
+                if (context.DisplayTarget is null && PipelinePassPolicy.RequiresMaterializationBefore(
+                        definition,
+                        context.HasPendingPointwiseOperations))
                 {
                     GpuImageFrame input = context.Image ?? throw new InvalidOperationException("点运算队列没有可用的 GPU 图像。");
-                    GpuImageFrame materialized = renderer.ApplyColorSpaceConversions(
-                        input,
-                        context.TakeColorConversions(),
-                        token);
+                    PointwiseImageOperations operations = context.TakePointwiseOperations();
+                    GpuImageFrame materialized = renderer.ApplyPointwiseOperations(input, operations, token);
                     context.SetImage(materialized);
                     TrackTransient(materialized);
                 }
@@ -58,12 +56,14 @@ public sealed class PipelineExecutionCoordinator
                 GpuImageFrame? inputImage = context.Image;
                 DisplayTargetFrame? inputTarget = context.DisplayTarget;
                 int inputPointwiseCount = context.PendingColorConversions.Count;
+                bool inputHasPendingSourceNormalization = context.HasPendingSourceNormalization;
                 await process.ExecuteAsync(context, token).ConfigureAwait(true);
 
                 if (definition.Role == ProcessRole.Observer &&
                     (!ReferenceEquals(inputImage, context.Image) ||
                      !ReferenceEquals(inputTarget, context.DisplayTarget) ||
-                     inputPointwiseCount != context.PendingColorConversions.Count))
+                     inputPointwiseCount != context.PendingColorConversions.Count ||
+                     inputHasPendingSourceNormalization != context.HasPendingSourceNormalization))
                 {
                     throw new InvalidOperationException(
                         $"观察过程 {definition.StableId} 修改了图像管线。观察过程必须保持图像和点运算队列不变。");
@@ -76,6 +76,10 @@ public sealed class PipelineExecutionCoordinator
                     !definition.RequiresIntermediateTexture &&
                     !ReferenceEquals(inputImage, context.Image))
                     throw new InvalidOperationException($"过程 {definition.StableId} 生成了 GPU 图像，但 Attribute 未声明 RequiresIntermediateTexture。");
+                if (definition.Role == ProcessRole.Image &&
+                    !definition.RequiresIntermediateTexture &&
+                    inputHasPendingSourceNormalization != context.HasPendingSourceNormalization)
+                    throw new InvalidOperationException($"过程 {definition.StableId} 修改了解码规范化边界；点运算过程必须保持图像表示不变。");
 
                 if (context.Image is GpuImageFrame produced) TrackTransient(produced);
 
@@ -93,7 +97,9 @@ public sealed class PipelineExecutionCoordinator
             foreach (GpuImageFrame image in transientImages.Where(image => !ReferenceEquals(image, document.FinalGpuFrame)))
                 image.Dispose();
             transientImages.Clear();
-            if (oldFinal is not null && !ReferenceEquals(oldFinal, document.FinalGpuFrame))
+            if (oldFinal is not null &&
+                !ReferenceEquals(oldFinal, document.FinalGpuFrame) &&
+                !ReferenceEquals(oldFinal, document.DecodedGpuFrame))
                 oldFinal.Dispose();
 
             document.HasExecuted = true;
@@ -141,6 +147,8 @@ public sealed class PipelineExecutionCoordinator
         private readonly bool _forceDecode;
         private readonly long _generation;
 
+        public bool IsNormalizationDeferred { get; private set; }
+
         public PipelineExecutionServices(
             RendererD3D11 renderer,
             ImageDecodeService decoder,
@@ -162,6 +170,10 @@ public sealed class PipelineExecutionCoordinator
             bool requiresDecode = _forceDecode || _document.DecodedGpuFrame is null;
             if (!requiresDecode)
             {
+                IsNormalizationDeferred = ImageDecodeService.OutputMatchesConfiguredContract(
+                    _document.Source,
+                    decoder,
+                    decoder.ActualBackend);
                 decoder.State = ProcessState.Cached;
                 decoder.Diagnostic = "复用该文档的解码 GPU 源纹理；未发生 CPU 解码或重复上传。";
                 return _document.DecodedGpuFrame!;
@@ -173,7 +185,11 @@ public sealed class PipelineExecutionCoordinator
                 throw new OperationCanceledException(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
-            GpuImageFrame gpuImage = _renderer.CreateGpuImageFrame(decoded);
+            IsNormalizationDeferred = decoder.DecodedOutputColorMetadata.Normalize().Equals(
+                decoded.EncodedColorMetadata.Normalize());
+            GpuImageFrame gpuImage = IsNormalizationDeferred
+                ? _renderer.CreateDecodedGpuImageFrame(decoded)
+                : _renderer.CreateGpuImageFrame(decoded);
             GpuImageFrame? previousDecoded = _document.DecodedGpuFrame;
             _document.DecodedGpuFrame = gpuImage;
             if (previousDecoded is not null && !ReferenceEquals(previousDecoded, _document.FinalGpuFrame))
@@ -182,7 +198,10 @@ public sealed class PipelineExecutionCoordinator
             decoder.ActualBackend = decoded.ActualBackend;
             decoder.BackendFallbackDetail = decoded.UsedFallback ? decoded.Diagnostic : "";
             decoder.Diagnostic = decoded.Diagnostic +
-                                 $" CPU 临时缓冲：{decoded.CpuByteCount / (1024.0 * 1024.0):0.##} MiB；已规范化为 RGBA16F scRGB/Linear，CPU 像素缓冲不驻留。";
+                                 $" CPU 临时缓冲：{decoded.CpuByteCount / (1024.0 * 1024.0):0.##} MiB；" +
+                                 (IsNormalizationDeferred
+                                     ? "解码过程声明的源规范化已延迟到下一个采样边界并可与显示终端融合；CPU 像素缓冲不驻留。"
+                                     : "实际后端输出偏离解码过程参数，已在节点内部原子规范化为固定 scRGB/Linear；CPU 像素缓冲不驻留。");
             if (decoded.UsedFallback) decoder.State = ProcessState.Warning;
             return gpuImage;
         }

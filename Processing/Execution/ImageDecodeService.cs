@@ -72,7 +72,7 @@ public sealed class ImageDecodeService
         cancellationToken.ThrowIfCancellationRequested();
         PhotoSauceCodecBootstrap.EnsureConfigured();
         bool preserveSourceEncoding = ShouldPreserveSourceEncoding(source, decoder);
-        using var stream = new MemoryStream(source.CompressedData.ToArray(), writable: false);
+        using var stream = new MemoryStream(source.CompressedBytes, writable: false);
         var settings = new ProcessImageSettings
         {
             ColorProfileMode = preserveSourceEncoding
@@ -104,25 +104,18 @@ public sealed class ImageDecodeService
         }
 
         int stride = checked(pixels.Width * 4);
-        byte[] rgba = new byte[checked(stride * pixels.Height)];
-        pixels.CopyPixels(new Rectangle(0, 0, pixels.Width, pixels.Height), stride, rgba);
-        ConvertBgraToRgbaInPlace(rgba, cancellationToken);
-        ApplyAlphaMode(rgba, decoder.AlphaMode.Value, cancellationToken);
+        byte[] bgra = GC.AllocateUninitializedArray<byte>(checked(stride * pixels.Height));
+        pixels.CopyPixels(new Rectangle(0, 0, pixels.Width, pixels.Height), stride, bgra);
+        ApplyAlphaMode(bgra, decoder.AlphaMode.Value, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
+        ColorSourceMetadata encodedColorMetadata = GetPhotoSauceColorMetadata(source, decoder, preserveSourceEncoding);
         return new(
             pixels.Width,
             pixels.Height,
-            DecodedPixelStorage.Rgba8,
-            rgba,
+            DecodedPixelStorage.Bgra8,
+            bgra,
             null,
-            preserveSourceEncoding
-                ? decoder.EffectiveSourceColorMetadata
-                : ColorSourceMetadata.Sdr with
-                {
-                    Alpha = decoder.AlphaMode.Value == DecoderAlphaMode.ForceOpaque
-                        ? AlphaRepresentation.Opaque
-                        : AlphaRepresentation.Straight
-                },
+            encodedColorMetadata,
             DecoderBackend.PhotoSauce,
             preserveSourceEncoding
                 ? "PhotoSauce 原生 codec CPU 压缩解码并保留源编码；GPU 按有效输入解释执行 transfer、矩阵、缩放和映射。"
@@ -130,12 +123,48 @@ public sealed class ImageDecodeService
             false);
     }
 
+    internal static ColorSourceMetadata GetEncodedColorMetadata(
+        RawImage source,
+        DecoderProcess decoder,
+        DecoderBackend backend)
+        => backend == DecoderBackend.StarwardUltraHdr
+            ? ColorSourceMetadata.PqRec2020Opaque
+            : GetPhotoSauceColorMetadata(source, decoder, ShouldPreserveSourceEncoding(source, decoder));
+
+    internal static bool OutputMatchesConfiguredContract(
+        RawImage source,
+        DecoderProcess decoder,
+        DecoderBackend backend) =>
+        decoder.DecodedOutputColorMetadata.Normalize().Equals(
+            GetEncodedColorMetadata(source, decoder, backend).Normalize());
+
+    private static ColorSourceMetadata GetPhotoSauceColorMetadata(
+        RawImage source,
+        DecoderProcess decoder,
+        bool preserveSourceEncoding)
+    {
+        AlphaRepresentation alpha = decoder.AlphaMode.Value == DecoderAlphaMode.ForceOpaque
+            ? AlphaRepresentation.Opaque
+            : AlphaRepresentation.Straight;
+        if (!preserveSourceEncoding)
+            return ColorSourceMetadata.Sdr with { Alpha = alpha };
+        if (decoder.HasOutputInterpretationOverrides)
+            return decoder.DecodedOutputColorMetadata with { Alpha = alpha };
+        DetectedImageMetadata detected = source.DetectedMetadata;
+        return new(
+            detected.Transfer,
+            detected.Primaries,
+            alpha,
+            detected.ReferenceWhiteNits,
+            detected.NominalPeakNits);
+    }
+
     private static bool ShouldPreserveSourceEncoding(RawImage source, DecoderProcess decoder)
     {
         DetectedImageMetadata detected = source.DetectedMetadata;
         if (detected.HasCicp) return true;
 
-        ColorSourceMetadata effective = decoder.EffectiveSourceColorMetadata;
+        ColorSourceMetadata effective = decoder.DecodedOutputColorMetadata.Normalize();
         AlphaRepresentation detectedAlpha = detected.HasAlpha
             ? AlphaRepresentation.Straight
             : AlphaRepresentation.Opaque;
@@ -144,15 +173,6 @@ public sealed class ImageDecodeService
                effective.Alpha != detectedAlpha ||
                effective.ReferenceWhiteNits != detected.ReferenceWhiteNits ||
                effective.NominalPeakNits != detected.NominalPeakNits;
-    }
-
-    private static void ConvertBgraToRgbaInPlace(byte[] pixels, CancellationToken cancellationToken)
-    {
-        for (int offset = 0; offset < pixels.Length; offset += 4)
-        {
-            if ((offset & 0xfffff) == 0) cancellationToken.ThrowIfCancellationRequested();
-            (pixels[offset], pixels[offset + 2]) = (pixels[offset + 2], pixels[offset]);
-        }
     }
 
     private static void ApplyAlphaMode(byte[] pixels, DecoderAlphaMode mode, CancellationToken cancellationToken)
@@ -186,7 +206,7 @@ public sealed class ImageDecodeService
         Type transferType = assembly.GetType("Starward.Codec.UltraHdr.UhdrColorTransfer", true)!;
         Type gamutType = assembly.GetType("Starward.Codec.UltraHdr.UhdrColorGamut", true)!;
         Type rangeType = assembly.GetType("Starward.Codec.UltraHdr.UhdrColorRange", true)!;
-        byte[] data = source.CompressedData.ToArray();
+        byte[] data = source.CompressedBytes;
         object compressed = Activator.CreateInstance(compressedType)!;
         GCHandle pinned = GCHandle.Alloc(data, GCHandleType.Pinned);
         try

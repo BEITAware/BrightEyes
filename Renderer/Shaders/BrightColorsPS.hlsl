@@ -204,7 +204,12 @@ float3 ApplyQueuedColorConversions(float3 linear709Nits)
 {
     int count = max((int)round(SamplingParameters.y), 0);
     if (count == 0) return linear709Nits;
-    float3 value = linear709Nits / 80.0;
+    // A directly fused HLG decoder input is still scene-relative here. Once
+    // materialized, or for all absolute/display-relative inputs, linear709Nits
+    // follows the 80-nit scRGB scale.
+    bool directHlg = SamplingParameters.z < 0.5 &&
+                     SourceParameters.x > 1.5 && SourceParameters.x < 2.5;
+    float3 value = directHlg ? linear709Nits : linear709Nits / 80.0;
     [loop]
     for (int index = 0; index < count; index++)
     {
@@ -213,8 +218,9 @@ float3 ApplyQueuedColorConversions(float3 linear709Nits)
         float3 linearOutput = FromRec2020(ToRec2020(linearInput, operation.y), operation.w);
         value = EncodeNodeTransfer(linearOutput, operation.z);
     }
-    float4 last = ColorConversions[count - 1];
-    return FromRec2020(ToRec2020(DecodeNodeTransfer(value, last.z), last.w), 0.0) * 80.0;
+    // The terminal consumes the stored values as-is. It does not silently
+    // undo the last CST; callers restore linear Rec.709 explicitly if needed.
+    return value * 80.0;
 }
 
 float4 LoadEncoded(int2 coordinate)
@@ -381,21 +387,22 @@ float3 CompressGamut(float3 color, float limit)
 float3 ApplyRenderMapper(float3 linear709)
 {
     float targetPeak = max(OutputParameters.y, 1.0);
+    bool workingIsCanonical = SamplingParameters.z > 0.5 || SamplingParameters.y > 0.5;
     if (MappingParameters.w > 0.5)
     {
-        float3 sceneLinear = SamplingParameters.z > 0.5 ? linear709 / 80.0 : linear709;
+        float3 sceneLinear = workingIsCanonical ? linear709 / 80.0 : linear709;
         float sceneLuminance = dot(max(sceneLinear, 0.0), float3(0.2126, 0.7152, 0.0722));
         float gamma = 1.2 + 0.42 * log10(max(targetPeak, 1000.0) / 1000.0);
         linear709 = sceneLinear * pow(max(sceneLuminance, 1e-6), gamma - 1.0) * targetPeak;
     }
-    else if (SamplingParameters.z > 0.5 && SamplingParameters.w > 0.0)
+    else if (workingIsCanonical && SamplingParameters.w > 0.0)
     {
         // The application owns source interpretation. Relative-light sources
         // are remapped from their detected reference white to the user-selected
         // SDR white without consulting any neighboring process.
         linear709 *= OutputParameters.z / max(SamplingParameters.w, 0.001);
     }
-    else if (SamplingParameters.z < 0.5 && (SourceParameters.x < 0.5 || SourceParameters.x > 2.5))
+    else if (!workingIsCanonical && (SourceParameters.x < 0.5 || SourceParameters.x > 2.5))
     {
         linear709 *= OutputParameters.z / max(SourceParameters.w, 0.001);
     }

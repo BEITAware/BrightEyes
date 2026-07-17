@@ -48,7 +48,7 @@ public sealed class GpuOscilloscopeEffect : IDisposable
     {
         _device = device;
         string shaderPath = Path.Combine(AppContext.BaseDirectory, "Renderer/Shaders/OscilloscopeCS.hlsl");
-        _shader = device.CreateComputeShader(Compiler.CompileFromFile(shaderPath, "main", "cs_5_0").Span);
+        _shader = device.CreateComputeShader(ShaderBytecodeCache.Get(shaderPath, "main", "cs_5_0"));
         _histogram = device.CreateBuffer(new BufferDescription
         {
             ByteWidth = ReadbackByteCount,

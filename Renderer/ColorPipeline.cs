@@ -3,7 +3,7 @@ using System;
 namespace BrightEyes.Renderer;
 
 /// <summary>
-/// Transfer functions understood by the BCM v0 bridge. Values are kept stable
+/// Transfer functions understood by the BCM v1 bridge. Values are kept stable
 /// because they are sent directly to the pixel shader.
 /// </summary>
 public enum ColorTransferFunction
@@ -16,7 +16,7 @@ public enum ColorTransferFunction
 }
 
 /// <summary>
-/// RGB primaries understood by the BCM v0 bridge.
+/// RGB primaries understood by the BCM v1 bridge.
 /// </summary>
 public enum ColorPrimaries
 {
@@ -43,6 +43,25 @@ public readonly record struct ColorSpaceConversionOperation(
     ColorPrimaries InputGamut,
     ColorTransferFunction OutputGamma,
     ColorPrimaries OutputGamut);
+
+/// <summary>
+/// Atomic work declared by the decoder from its own injected parameters. This
+/// is an executable normalization operation, not image metadata published for
+/// another process to interpret.
+/// </summary>
+public readonly record struct SourceNormalizationOperation(ColorSourceMetadata EncodedSource);
+
+/// <summary>
+/// Consecutive pointwise process work that can share one physical GPU pass.
+/// Sampling processes never inspect this batch; the coordinator flushes it at
+/// their declared materialization boundaries.
+/// </summary>
+public readonly record struct PointwiseImageOperations(
+    SourceNormalizationOperation? SourceNormalization,
+    IReadOnlyList<ColorSpaceConversionOperation> ColorConversions)
+{
+    public bool IsEmpty => SourceNormalization is null && ColorConversions.Count == 0;
+}
 
 /// <summary>
 /// Describes the encoding of the pixels in an external texture. RGB values
@@ -78,8 +97,10 @@ public readonly record struct ColorSourceMetadata(
         10000.0f);
 
     /// <summary>
-    /// The fixed decoder/process texture contract. scRGB uses linear extended
-    /// Rec.709 primaries and 80 nit per unit; process textures are premultiplied.
+    /// The decoder output and the default terminal interpretation. scRGB uses
+    /// linear extended Rec.709 primaries and 80 nit per unit. Ordinary process
+    /// nodes preserve texture values and do not track whether an explicit CST
+    /// changed their representation.
     /// </summary>
     public static ColorSourceMetadata ScRgbLinear => new(
         ColorTransferFunction.Linear,

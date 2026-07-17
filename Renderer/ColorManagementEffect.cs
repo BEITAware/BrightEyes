@@ -63,8 +63,8 @@ public sealed class ColorManagementEffect : IDisposable
         string baseDirectory = AppContext.BaseDirectory;
         string vertexPath = Path.Combine(baseDirectory, "Renderer/Shaders/FullScreenVS.hlsl");
         string pixelPath = Path.Combine(baseDirectory, "Renderer/Shaders/BrightColorsPS.hlsl");
-        _vertexShader = device.CreateVertexShader(Compiler.CompileFromFile(vertexPath, "main", "vs_5_0").Span);
-        _pixelShader = device.CreatePixelShader(Compiler.CompileFromFile(pixelPath, "main", "ps_5_0").Span);
+        _vertexShader = device.CreateVertexShader(ShaderBytecodeCache.Get(vertexPath, "main", "vs_5_0"));
+        _pixelShader = device.CreatePixelShader(ShaderBytecodeCache.Get(pixelPath, "main", "ps_5_0"));
         _pointSampler = device.CreateSamplerState(new SamplerDescription
         {
             Filter = Filter.MinMagMipPoint,

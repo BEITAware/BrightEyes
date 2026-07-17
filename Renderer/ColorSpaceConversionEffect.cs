@@ -10,10 +10,10 @@ using Vortice.Mathematics;
 namespace BrightEyes.Renderer;
 
 /// <summary>
-/// Normalizes decoder uploads to the fixed scRGB texture contract and can
-/// materialize an arbitrary chain of explicit color-space conversions in one
-/// draw. Pointwise nodes themselves do not allocate textures; this effect is
-/// invoked only at a real sampling boundary.
+/// Normalizes decoder uploads to scRGB and can materialize an arbitrary chain
+/// of explicit color-space conversions in one draw. CST output values are kept
+/// verbatim; sampling boundaries do not convert them back to scRGB. Pointwise
+/// nodes themselves do not allocate textures.
 /// </summary>
 internal sealed class ColorSpaceConversionEffect : IDisposable
 {
@@ -37,10 +37,10 @@ internal sealed class ColorSpaceConversionEffect : IDisposable
     {
         _device = device;
         string baseDirectory = AppContext.BaseDirectory;
-        _vertexShader = device.CreateVertexShader(Compiler.CompileFromFile(
-            Path.Combine(baseDirectory, "Renderer/Shaders/FullScreenVS.hlsl"), "main", "vs_5_0").Span);
-        _pixelShader = device.CreatePixelShader(Compiler.CompileFromFile(
-            Path.Combine(baseDirectory, "Renderer/Shaders/ColorSpaceConversionPS.hlsl"), "main", "ps_5_0").Span);
+        _vertexShader = device.CreateVertexShader(ShaderBytecodeCache.Get(
+            Path.Combine(baseDirectory, "Renderer/Shaders/FullScreenVS.hlsl"), "main", "vs_5_0"));
+        _pixelShader = device.CreatePixelShader(ShaderBytecodeCache.Get(
+            Path.Combine(baseDirectory, "Renderer/Shaders/ColorSpaceConversionPS.hlsl"), "main", "ps_5_0"));
         _pointSampler = device.CreateSamplerState(new SamplerDescription
         {
             Filter = Filter.MinMagMipPoint,
@@ -64,6 +64,15 @@ internal sealed class ColorSpaceConversionEffect : IDisposable
         int height,
         ColorSourceMetadata sourceMetadata) =>
         Apply(context, source, width, height, sourceMetadata, Array.Empty<ColorSpaceConversionOperation>());
+
+    public GpuImageFrame NormalizeDecoded(
+        ID3D11DeviceContext context,
+        ID3D11ShaderResourceView source,
+        int width,
+        int height,
+        ColorSourceMetadata sourceMetadata,
+        IReadOnlyList<ColorSpaceConversionOperation> operations) =>
+        Apply(context, source, width, height, sourceMetadata, operations);
 
     public GpuImageFrame Apply(
         ID3D11DeviceContext context,

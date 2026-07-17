@@ -29,13 +29,13 @@ public sealed class GaussianBlurProcess : ProcessBase
     [ProcessParameter("sigma", "Parameter_BlurSigma", ProcessParameterEditor.Number, 1, Unit = "px", Minimum = 0.1, Maximum = 32, Step = 0.1, AutoValueSource = "Gaussian blur default")]
     public ProcessParameter<float> Sigma { get; } = new(4.0f);
 
-    public override string Summary => $"{Radius.Value}px / sigma {Sigma.Value:0.##} / RGBA16F linear extended-sRGB";
+    public override string Summary => $"{Radius.Value}px / sigma {Sigma.Value:0.##} / RGBA16F value-domain";
 
     public override void RecalculateAutomaticParameters(ProcessAutoContext context)
     {
         SetAutomatic(Radius, 8, "Gaussian blur default");
         SetAutomatic(Sigma, 4.0f, "Gaussian blur default");
-        Diagnostic = "等待 GPU 执行；本过程会产生一张独立的线性中间纹理。";
+        Diagnostic = "等待 GPU 执行；直接卷积传入的纹理数值，不执行色彩空间转换。";
         NotifySummaryChanged();
     }
 
@@ -48,7 +48,7 @@ public sealed class GaussianBlurProcess : ProcessBase
             ?? throw new InvalidOperationException("GPU 过程执行服务不可用。");
         GpuImageFrame output = renderer.ApplyGaussianBlur(input, Radius.Value, Sigma.Value, cancellationToken);
         context.SetImage(output);
-        Diagnostic = $"GPU 两向高斯卷积完成；已生成 {output.Width} x {output.Height} RGBA16F 独立中间纹理（约 {output.ApproximateByteCount / (1024.0 * 1024.0):0.##} MiB）。";
+        Diagnostic = $"GPU 两向高斯卷积完成；纹理数值表示保持透明，已生成 {output.Width} x {output.Height} RGBA16F 中间纹理（约 {output.ApproximateByteCount / (1024.0 * 1024.0):0.##} MiB）。";
         return ValueTask.CompletedTask;
     }
 

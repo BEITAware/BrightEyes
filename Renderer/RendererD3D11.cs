@@ -38,6 +38,7 @@ namespace BrightEyes.Renderer
         private ColorSpaceConversionEffect? _colorSpaceConversionEffect;
         private GpuOscilloscopeEffect? _gpuOscilloscopeEffect;
         private GaussianBlurEffect? _gaussianBlurEffect;
+        private bool _gpuOscilloscopeUnavailable;
 
 
         // External texture support
@@ -105,7 +106,7 @@ namespace BrightEyes.Renderer
         public DisplayColorMetadata DisplayColorMetadata => _displayColorMetadata;
 
         public bool IsHdrOutput => _isHdrOutput;
-        public bool IsAnalysisAvailable => _gpuOscilloscopeEffect is not null;
+        public bool IsAnalysisAvailable => _device is not null && !_gpuOscilloscopeUnavailable;
         public event Action<string>? DiagnosticRaised;
 
         private const uint MonitorDefaultToNearest = 2;
@@ -214,25 +215,13 @@ namespace BrightEyes.Renderer
                 string vsPath = Path.Combine(baseDirectory, "Renderer/Shaders/FullScreenVS.hlsl");
                 string psPath = Path.Combine(baseDirectory, "Renderer/Shaders/HDRWhitePS.hlsl");
 
-               var vertexShaderByteCode = Compiler.CompileFromFile(vsPath, "main", "vs_5_0");
-               _vertexShader = _device.CreateVertexShader(vertexShaderByteCode.Span);
+               byte[] vertexShaderByteCode = ShaderBytecodeCache.Get(vsPath, "main", "vs_5_0");
+               _vertexShader = _device.CreateVertexShader(vertexShaderByteCode);
 
-               var pixelShaderByteCode = Compiler.CompileFromFile(psPath, "main", "ps_5_0");
-               _pixelShader = _device.CreatePixelShader(pixelShaderByteCode.Span);
+               byte[] pixelShaderByteCode = ShaderBytecodeCache.Get(psPath, "main", "ps_5_0");
+               _pixelShader = _device.CreatePixelShader(pixelShaderByteCode);
 
                _colorManagementEffect = new ColorManagementEffect(_device);
-               _colorSpaceConversionEffect = new ColorSpaceConversionEffect(_device);
-               _gaussianBlurEffect = new GaussianBlurEffect(_device);
-               try
-               {
-                   _gpuOscilloscopeEffect = new GpuOscilloscopeEffect(_device);
-               }
-               catch (Exception ex)
-               {
-                   string message = "GPU 示波器初始化失败；图像解码与显示仍可用：" + ex.GetBaseException().Message;
-                   Debug.WriteLine(message);
-                   DiagnosticRaised?.Invoke(message);
-               }
            }
             catch (Exception ex)
             {
@@ -469,7 +458,8 @@ namespace BrightEyes.Renderer
             ArgumentNullException.ThrowIfNull(callback);
             lock (_lockObject)
             {
-                if (_gpuOscilloscopeEffect is null ||
+                GpuOscilloscopeEffect? effect = GetGpuOscilloscopeEffect();
+                if (effect is null ||
                     _displayTargetShaderResourceView is null ||
                     target.PresentationId != _presentationId)
                     return false;
@@ -494,8 +484,9 @@ namespace BrightEyes.Renderer
             ArgumentNullException.ThrowIfNull(callback);
             lock (_lockObject)
             {
-                if (_gpuOscilloscopeEffect is null) return false;
-                bool dispatched = _gpuOscilloscopeEffect.Dispatch(
+                GpuOscilloscopeEffect? effect = GetGpuOscilloscopeEffect();
+                if (effect is null) return false;
+                bool dispatched = effect.Dispatch(
                     _deviceContext ?? throw new InvalidOperationException("Device context not initialized."),
                     source.ShaderResourceView,
                     source.Width,
@@ -776,13 +767,14 @@ namespace BrightEyes.Renderer
 
         public void UploadDecodedFrame(DecodedImageFrame frame)
         {
-            if (frame.Storage == DecodedPixelStorage.Rgba8)
+            if (frame.Storage is DecodedPixelStorage.Rgba8 or DecodedPixelStorage.Bgra8)
             {
-                SetExternalTextureFromRgba8(
-                    frame.Rgba8 ?? throw new InvalidDataException("Decoded RGBA8 frame has no pixel buffer."),
+                SetExternalTextureFromBytePixels(
+                    frame.PixelBytes ?? throw new InvalidDataException("Decoded 8-bit frame has no pixel buffer."),
                     frame.Width,
                     frame.Height,
-                    frame.EncodedColorMetadata);
+                    frame.EncodedColorMetadata,
+                    frame.Storage == DecodedPixelStorage.Bgra8 ? Format.B8G8R8A8_UNorm : Format.R8G8B8A8_UNorm);
             }
             else
             {
@@ -796,14 +788,24 @@ namespace BrightEyes.Renderer
 
         public GpuImageFrame CreateGpuImageFrame(DecodedImageFrame frame)
         {
+            using GpuImageFrame decoded = CreateDecodedGpuImageFrame(frame);
+            return NormalizeDecodedGpuImageFrame(
+                decoded,
+                frame.EncodedColorMetadata,
+                Array.Empty<ColorSpaceConversionOperation>(),
+                CancellationToken.None);
+        }
+
+        internal GpuImageFrame CreateDecodedGpuImageFrame(DecodedImageFrame frame)
+        {
             if (_device == null || _deviceContext == null)
                 throw new InvalidOperationException("Renderer not initialized.");
             lock (_lockObject)
             {
                 ID3D11Texture2D texture;
-                if (frame.Storage == DecodedPixelStorage.Rgba8)
+                if (frame.Storage is DecodedPixelStorage.Rgba8 or DecodedPixelStorage.Bgra8)
                 {
-                    byte[] rgba = frame.Rgba8 ?? throw new InvalidDataException("Decoded RGBA8 frame has no pixel buffer.");
+                    byte[] pixels = frame.PixelBytes ?? throw new InvalidDataException("Decoded 8-bit frame has no pixel buffer.");
                     int rowPitch = checked(frame.Width * 4);
                     var description = new Texture2DDescription
                     {
@@ -811,13 +813,15 @@ namespace BrightEyes.Renderer
                         Height = frame.Height,
                         MipLevels = 1,
                         ArraySize = 1,
-                        Format = Format.R8G8B8A8_UNorm,
+                        Format = frame.Storage == DecodedPixelStorage.Bgra8
+                            ? Format.B8G8R8A8_UNorm
+                            : Format.R8G8B8A8_UNorm,
                         SampleDescription = new SampleDescription(1, 0),
                         Usage = ResourceUsage.Default,
                         BindFlags = BindFlags.ShaderResource
                     };
                     texture = _device.CreateTexture2D(description);
-                    GCHandle handle = GCHandle.Alloc(rgba, GCHandleType.Pinned);
+                    GCHandle handle = GCHandle.Alloc(pixels, GCHandleType.Pinned);
                     try
                     {
                         _deviceContext.UpdateSubresource(
@@ -851,16 +855,36 @@ namespace BrightEyes.Renderer
                 }
 
                 ID3D11ShaderResourceView view = _device.CreateShaderResourceView(texture);
-                try
+                return new GpuImageFrame(texture, view, frame.Width, frame.Height);
+            }
+        }
+
+        internal GpuImageFrame NormalizeDecodedGpuImageFrame(
+            GpuImageFrame source,
+            ColorSourceMetadata sourceMetadata,
+            IReadOnlyList<ColorSpaceConversionOperation> operations,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(operations);
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (_lockObject)
+            {
+                GpuImageFrame output = GetColorSpaceConversionEffect()
+                    .NormalizeDecoded(
+                        _deviceContext ?? throw new InvalidOperationException("Device context not initialized."),
+                        source.ShaderResourceView,
+                        source.Width,
+                        source.Height,
+                        sourceMetadata,
+                        operations);
+                UpdateViewport();
+                if (cancellationToken.IsCancellationRequested)
                 {
-                    return (_colorSpaceConversionEffect ?? throw new InvalidOperationException("Decoder normalization is unavailable."))
-                        .NormalizeDecoded(_deviceContext, view, frame.Width, frame.Height, frame.EncodedColorMetadata);
+                    output.Dispose();
+                    cancellationToken.ThrowIfCancellationRequested();
                 }
-                finally
-                {
-                    view.Dispose();
-                    texture.Dispose();
-                }
+                return output;
             }
         }
 
@@ -874,7 +898,7 @@ namespace BrightEyes.Renderer
             cancellationToken.ThrowIfCancellationRequested();
             lock (_lockObject)
             {
-                GpuImageFrame output = (_gaussianBlurEffect ?? throw new InvalidOperationException("Gaussian blur is unavailable."))
+                GpuImageFrame output = GetGaussianBlurEffect()
                     .Apply(_deviceContext ?? throw new InvalidOperationException("Device context not initialized."), source, radius, sigma);
                 UpdateViewport();
                 if (cancellationToken.IsCancellationRequested)
@@ -896,7 +920,7 @@ namespace BrightEyes.Renderer
             cancellationToken.ThrowIfCancellationRequested();
             lock (_lockObject)
             {
-                GpuImageFrame output = (_colorSpaceConversionEffect ?? throw new InvalidOperationException("Color conversion is unavailable."))
+                GpuImageFrame output = GetColorSpaceConversionEffect()
                     .Apply(_deviceContext ?? throw new InvalidOperationException("Device context not initialized."), source, operations);
                 UpdateViewport();
                 if (cancellationToken.IsCancellationRequested)
@@ -907,6 +931,18 @@ namespace BrightEyes.Renderer
                 return output;
             }
         }
+
+        internal GpuImageFrame ApplyPointwiseOperations(
+            GpuImageFrame source,
+            PointwiseImageOperations operations,
+            CancellationToken cancellationToken) =>
+            operations.SourceNormalization is SourceNormalizationOperation normalization
+                ? NormalizeDecodedGpuImageFrame(
+                    source,
+                    normalization.EncodedSource,
+                    operations.ColorConversions,
+                    cancellationToken)
+                : ApplyColorSpaceConversions(source, operations.ColorConversions, cancellationToken);
 
         public DisplayTargetFrame SetPresentationImage(
             GpuImageFrame image,
@@ -919,6 +955,28 @@ namespace BrightEyes.Renderer
                 _externalRequiresHlgOotf = false;
                 _externalIsCanonicalScRgb = true;
                 _presentationColorConversions = colorConversions?.ToArray() ?? Array.Empty<ColorSpaceConversionOperation>();
+                return new DisplayTargetFrame(++_presentationId, image);
+            }
+        }
+
+        internal DisplayTargetFrame SetPresentationImage(
+            GpuImageFrame image,
+            PointwiseImageOperations operations)
+        {
+            ArgumentNullException.ThrowIfNull(image);
+            lock (_lockObject)
+            {
+                if (operations.SourceNormalization is SourceNormalizationOperation normalization)
+                {
+                    SetExternalTexture(image.Texture, normalization.EncodedSource);
+                }
+                else
+                {
+                    SetExternalTexture(image.Texture, ColorSourceMetadata.ScRgbLinear);
+                    _externalRequiresHlgOotf = false;
+                    _externalIsCanonicalScRgb = true;
+                }
+                _presentationColorConversions = operations.ColorConversions.ToArray();
                 return new DisplayTargetFrame(++_presentationId, image);
             }
         }
@@ -938,10 +996,25 @@ namespace BrightEyes.Renderer
             int height,
             ColorSourceMetadata colorMetadata)
         {
+            SetExternalTextureFromBytePixels(
+                rgba,
+                width,
+                height,
+                colorMetadata,
+                Format.R8G8B8A8_UNorm);
+        }
+
+        private void SetExternalTextureFromBytePixels(
+            byte[] pixels,
+            int width,
+            int height,
+            ColorSourceMetadata colorMetadata,
+            Format format)
+        {
             if (_device == null) throw new InvalidOperationException("Renderer not initialized.");
-            if (rgba == null) throw new ArgumentNullException(nameof(rgba));
+            if (pixels == null) throw new ArgumentNullException(nameof(pixels));
             int rowPitch = checked(width * 4);
-            if (width <= 0 || height <= 0 || rgba.Length != checked(rowPitch * height)) throw new ArgumentException("Invalid RGBA8 image buffer.", nameof(rgba));
+            if (width <= 0 || height <= 0 || pixels.Length != checked(rowPitch * height)) throw new ArgumentException("Invalid 8-bit image buffer.", nameof(pixels));
 
             lock (_lockObject)
             {
@@ -951,14 +1024,14 @@ namespace BrightEyes.Renderer
                     Height = height,
                     MipLevels = 1,
                     ArraySize = 1,
-                    Format = Format.R8G8B8A8_UNorm,
+                    Format = format,
                     SampleDescription = new SampleDescription(1, 0),
                     Usage = ResourceUsage.Default,
                     BindFlags = BindFlags.ShaderResource,
                     MiscFlags = ResourceOptionFlags.None
                 };
                 var texture = _device.CreateTexture2D(desc);
-                var handle = GCHandle.Alloc(rgba, GCHandleType.Pinned);
+                var handle = GCHandle.Alloc(pixels, GCHandleType.Pinned);
                 try
                 {
                     _deviceContext!.UpdateSubresource(new MappedSubresource(handle.AddrOfPinnedObject(), rowPitch, 0), texture, 0);
@@ -982,6 +1055,34 @@ namespace BrightEyes.Renderer
             _externalIsCanonicalScRgb = false;
             _presentationColorConversions = Array.Empty<ColorSpaceConversionOperation>();
             _externalTextureShaderResourceView = _device!.CreateShaderResourceView(texture);
+        }
+
+        private ColorSpaceConversionEffect GetColorSpaceConversionEffect() =>
+            _colorSpaceConversionEffect ??= new ColorSpaceConversionEffect(
+                _device ?? throw new InvalidOperationException("Renderer not initialized."));
+
+        private GaussianBlurEffect GetGaussianBlurEffect() =>
+            _gaussianBlurEffect ??= new GaussianBlurEffect(
+                _device ?? throw new InvalidOperationException("Renderer not initialized."));
+
+        private GpuOscilloscopeEffect? GetGpuOscilloscopeEffect()
+        {
+            if (_gpuOscilloscopeEffect is not null || _gpuOscilloscopeUnavailable)
+                return _gpuOscilloscopeEffect;
+            try
+            {
+                return _gpuOscilloscopeEffect = new GpuOscilloscopeEffect(
+                    _device ?? throw new InvalidOperationException("Renderer not initialized."));
+            }
+            catch (Exception ex)
+            {
+                _gpuOscilloscopeUnavailable = true;
+                string message = "GPU oscilloscope initialization failed; image decoding and display remain available: " +
+                                 ex.GetBaseException().Message;
+                Debug.WriteLine(message);
+                DiagnosticRaised?.Invoke(message);
+                return null;
+            }
         }
 
         public void Dispose()

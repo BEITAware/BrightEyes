@@ -90,6 +90,7 @@ public sealed class RawImage
     public string FileName => Path.GetFileName(FilePath);
     public long FileSize => _compressedData.LongLength;
     public ReadOnlyMemory<byte> CompressedData => _compressedData;
+    internal byte[] CompressedBytes => _compressedData;
     public DetectedImageMetadata DetectedMetadata { get; }
     public string ContentIdentity { get; }
 }

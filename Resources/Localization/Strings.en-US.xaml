@@ -19,7 +19,7 @@
     <system:String x:Key="Process_ViewRendering_Name">View rendering</system:String>
     <system:String x:Key="Process_ViewRendering_Description">Maps a linear extended-sRGB intermediate into view space, then encodes and presents it.</system:String>
     <system:String x:Key="Process_GaussianBlur_Name">Gaussian blur</system:String>
-    <system:String x:Key="Process_GaussianBlur_Description">Runs a separable GPU Gaussian convolution and produces an independent RGBA16F linear intermediate texture.</system:String>
+    <system:String x:Key="Process_GaussianBlur_Description">Convolves the incoming texture values directly on the GPU without color-space conversion.</system:String>
     <system:String x:Key="Process_ColorSpaceConversion_Name">Color space conversion</system:String>
     <system:String x:Key="Process_ColorSpaceConversion_Description">Explicitly converts input gamma/gamut to output gamma/gamut. Adjacent conversions are fused and do not exchange metadata.</system:String>
     <system:String x:Key="Process_Waveform_Name">Waveform</system:String>
@@ -35,6 +35,10 @@
     <system:String x:Key="Parameter_Frame">Frame</system:String>
     <system:String x:Key="Parameter_ApplyExif">Apply EXIF orientation</system:String>
     <system:String x:Key="Parameter_AlphaMode">Alpha handling</system:String>
+    <system:String x:Key="Parameter_DecoderOutputTransfer">Decoded output transfer</system:String>
+    <system:String x:Key="Parameter_DecoderOutputPrimaries">Decoded output primaries</system:String>
+    <system:String x:Key="Parameter_DecoderOutputReferenceWhite">Decoded output reference white</system:String>
+    <system:String x:Key="Parameter_DecoderOutputPeak">Decoded output nominal peak</system:String>
     <system:String x:Key="Parameter_Precision">Precision</system:String>
     <system:String x:Key="Parameter_RenderPreset">Mapping preset</system:String>
     <system:String x:Key="Parameter_Interpolation">Interpolation</system:String>
@@ -45,6 +49,8 @@
     <system:String x:Key="Parameter_OutputGamma">Output gamma</system:String>
     <system:String x:Key="Parameter_OutputGamut">Output gamut</system:String>
     <system:String x:Key="Parameter_SourcePeak">Source nominal peak</system:String>
+    <system:String x:Key="Parameter_SourceReferenceWhite">Source reference white</system:String>
+    <system:String x:Key="Parameter_SourceIsRelative">Source uses relative light</system:String>
     <system:String x:Key="Parameter_SdrWhite">SDR white</system:String>
     <system:String x:Key="Parameter_TargetPeak">Target peak</system:String>
     <system:String x:Key="Parameter_HlgOotf">HLG OOTF</system:String>

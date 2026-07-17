@@ -21,7 +21,7 @@ namespace BrightEyes.Processing.BuiltIn;
     CanMove = false,
     Role = ProcessRole.Decoder,
     ExecutionDomain = ProcessExecutionDomain.Hybrid,
-    Version = 4)]
+    Version = 5)]
 public sealed class DecoderProcess : ProcessBase
 {
     [ProcessParameter("backend", "Parameter_DecoderBackend", ProcessParameterEditor.Enum, 0, AutoValueSource = "Container metadata and backend capability")]
@@ -39,9 +39,33 @@ public sealed class DecoderProcess : ProcessBase
     [ProcessParameter("alpha-mode", "Parameter_AlphaMode", ProcessParameterEditor.Enum, 4, AutoValueSource = "Container alpha")]
     public ProcessParameter<DecoderAlphaMode> AlphaMode { get; } = new(DecoderAlphaMode.PreserveStraight);
 
+    [ProcessParameter("output.transfer", "Parameter_DecoderOutputTransfer", ProcessParameterEditor.Enum, 10, AutoValueSource = "Application source interpretation", IsAdvanced = true)]
+    public ProcessParameter<ColorTransferFunction> OutputTransfer { get; } = new(ColorTransferFunction.Srgb);
+
+    [ProcessParameter("output.primaries", "Parameter_DecoderOutputPrimaries", ProcessParameterEditor.Enum, 11, AutoValueSource = "Application source interpretation", IsAdvanced = true)]
+    public ProcessParameter<ColorPrimaries> OutputPrimaries { get; } = new(ColorPrimaries.Rec709);
+
+    [ProcessParameter("output.reference-white", "Parameter_DecoderOutputReferenceWhite", ProcessParameterEditor.Number, 12, Unit = "nit", Minimum = 0.01, Maximum = 10000, Step = 1, AutoValueSource = "Application source interpretation", IsAdvanced = true)]
+    public ProcessParameter<float> OutputReferenceWhiteNits { get; } = new(100.0f);
+
+    [ProcessParameter("output.nominal-peak", "Parameter_DecoderOutputPeak", ProcessParameterEditor.Number, 13, Unit = "nit", Minimum = 1, Maximum = 10000, Step = 10, AutoValueSource = "Application source interpretation", IsAdvanced = true)]
+    public ProcessParameter<float> OutputNominalPeakNits { get; } = new(100.0f);
+
     public DecoderBackend ActualBackend { get; internal set; } = DecoderBackend.PhotoSauce;
     public string BackendFallbackDetail { get; internal set; } = "";
-    public ColorSourceMetadata EffectiveSourceColorMetadata { get; private set; } = ColorSourceMetadata.Sdr;
+    public ColorSourceMetadata DecodedOutputColorMetadata => new(
+        OutputTransfer.Value,
+        OutputPrimaries.Value,
+        AlphaMode.Value == DecoderAlphaMode.ForceOpaque
+            ? AlphaRepresentation.Opaque
+            : AlphaRepresentation.Straight,
+        OutputReferenceWhiteNits.Value,
+        OutputNominalPeakNits.Value);
+    internal bool HasOutputInterpretationOverrides =>
+        OutputTransfer.HasUserOverride ||
+        OutputPrimaries.HasUserOverride ||
+        OutputReferenceWhiteNits.HasUserOverride ||
+        OutputNominalPeakNits.HasUserOverride;
 
     public override string Summary => $"{ActualBackend} / RGBA16F scRGB / Linear";
 
@@ -53,14 +77,18 @@ public sealed class DecoderProcess : ProcessBase
         Set(Frame, 0, "First frame", MetadataConfidence.Authoritative);
         Set(ApplyExifOrientation, metadata.ExifOrientation != 1, "EXIF orientation", metadata.ExifOrientation == 1 ? MetadataConfidence.Assumed : MetadataConfidence.High);
         Set(AlphaMode, metadata.HasAlpha ? DecoderAlphaMode.PreserveStraight : DecoderAlphaMode.ForceOpaque, "Container alpha", MetadataConfidence.High);
-        EffectiveSourceColorMetadata = new(
-            metadata.Transfer,
-            metadata.Primaries,
-            AlphaMode.Value == DecoderAlphaMode.ForceOpaque || !metadata.HasAlpha
-                ? AlphaRepresentation.Opaque
-                : AlphaRepresentation.Straight,
-            metadata.ReferenceWhiteNits,
-            metadata.NominalPeakNits);
+        ColorSourceMetadata output = Backend.Value == DecoderBackend.StarwardUltraHdr
+            ? ColorSourceMetadata.PqRec2020Opaque
+            : new(
+                metadata.Transfer,
+                metadata.Primaries,
+                metadata.HasAlpha ? AlphaRepresentation.Straight : AlphaRepresentation.Opaque,
+                metadata.ReferenceWhiteNits,
+                metadata.NominalPeakNits);
+        Set(OutputTransfer, output.Transfer, "Application source interpretation", MetadataConfidence.High);
+        Set(OutputPrimaries, output.Primaries, "Application source interpretation", MetadataConfidence.High);
+        Set(OutputReferenceWhiteNits, output.ReferenceWhiteNits, "Application source interpretation", MetadataConfidence.High);
+        Set(OutputNominalPeakNits, output.NominalPeakNits, "Application source interpretation", MetadataConfidence.High);
         if (State == ProcessState.NotRun)
         {
             ActualBackend = Backend.Value;
@@ -75,7 +103,10 @@ public sealed class DecoderProcess : ProcessBase
             throw new InvalidOperationException("解码器必须是过程图中唯一的 GPU 图像生产者。");
         var service = (IDecoderExecutionService?)context.Services.GetService(typeof(IDecoderExecutionService))
             ?? throw new InvalidOperationException("解码执行服务不可用。");
-        context.SetImage(await service.GetGpuImageAsync(this, cancellationToken));
+        GpuImageFrame image = await service.GetGpuImageAsync(this, cancellationToken);
+        context.SetImage(image);
+        if (service.IsNormalizationDeferred)
+            context.QueueSourceNormalization(new(DecodedOutputColorMetadata));
     }
 
     private static DecoderBackend SelectBackend(DetectedImageMetadata metadata)

@@ -37,11 +37,11 @@ namespace BrightEyes.Renderer
             string vsPath = Path.Combine(baseDirectory, "Renderer/Shaders/FullScreenVS.hlsl");
             string psPath = Path.Combine(baseDirectory, "Renderer/ToneMappingPS.hlsl");
 
-            var vertexShaderByteCode = Compiler.CompileFromFile(vsPath, "main", "vs_5_0");
-            _vertexShader = device.CreateVertexShader(vertexShaderByteCode.Span);
+            byte[] vertexShaderByteCode = ShaderBytecodeCache.Get(vsPath, "main", "vs_5_0");
+            _vertexShader = device.CreateVertexShader(vertexShaderByteCode);
 
-            var pixelShaderByteCode = Compiler.CompileFromFile(psPath, "main", "ps_5_0");
-            _pixelShader = device.CreatePixelShader(pixelShaderByteCode.Span);
+            byte[] pixelShaderByteCode = ShaderBytecodeCache.Get(psPath, "main", "ps_5_0");
+            _pixelShader = device.CreatePixelShader(pixelShaderByteCode);
 
             var pointSamplerDesc = new SamplerDescription
             {

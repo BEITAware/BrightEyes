@@ -19,12 +19,9 @@ namespace BrightEyes.Processing.BuiltIn;
     CanMove = false,
     Role = ProcessRole.Terminal,
     ExecutionDomain = ProcessExecutionDomain.Gpu,
-    Version = 6)]
+    Version = 7)]
 public sealed class ViewRenderingProcess : ProcessBase
 {
-    private float _sourceReferenceWhiteNits = 100.0f;
-    private bool _sourceIsRelative = true;
-
     [ProcessParameter("preset", "Parameter_RenderPreset", ProcessParameterEditor.Enum, 0, AutoValueSource = "BrightEyes default")]
     public ProcessParameter<ToneMappingMode> Preset { get; } = new(ToneMappingMode.ColorCorrectV1);
 
@@ -49,6 +46,12 @@ public sealed class ViewRenderingProcess : ProcessBase
     [ProcessParameter("background", "Parameter_Background", ProcessParameterEditor.Enum, 7, AutoValueSource = "Application theme")]
     public ProcessParameter<BackgroundMode> Background { get; } = new(BackgroundMode.ApplicationBackground);
 
+    [ProcessParameter("source-reference-white", "Parameter_SourceReferenceWhite", ProcessParameterEditor.Number, 8, Unit = "nit", Minimum = 0.01, Maximum = 10000, Step = 1, AutoValueSource = "Application source interpretation", IsAdvanced = true)]
+    public ProcessParameter<float> SourceReferenceWhiteNits { get; } = new(100.0f);
+
+    [ProcessParameter("source-relative", "Parameter_SourceIsRelative", ProcessParameterEditor.Boolean, 9, AutoValueSource = "Application source interpretation", IsAdvanced = true)]
+    public ProcessParameter<bool> SourceIsRelative { get; } = new(true);
+
     public override string Summary => $"{Preset.Value} / {InterpolationLabel(Interpolation.Value)} / {TargetPeakNits.Value:0.#} nit / {GamutMapping.Value}";
 
     public override void RecalculateAutomaticParameters(ProcessAutoContext context)
@@ -64,12 +67,14 @@ public sealed class ViewRenderingProcess : ProcessBase
         SetAutomatic(SdrWhiteNits, sdrWhite, context.Display.HasSystemSdrWhiteLevel ? "Windows SDR white" : "Display fallback");
         SetAutomatic(TargetPeakNits, targetPeak, context.Display.IsHdr ? "DXGI display metadata" : "SDR terminal");
         bool sourceIsSceneLinear = context.Source?.DetectedMetadata.PhotometricModel == PhotometricModel.SceneLinearRelative;
-        _sourceIsRelative = context.Source?.DetectedMetadata.PhotometricModel == PhotometricModel.DisplayLinearRelative;
-        _sourceReferenceWhiteNits = context.Source?.DetectedMetadata.ReferenceWhiteNits ?? 100.0f;
+        bool sourceIsRelative = context.Source?.DetectedMetadata.PhotometricModel == PhotometricModel.DisplayLinearRelative;
+        float sourceReferenceWhite = context.Source?.DetectedMetadata.ReferenceWhiteNits ?? 100.0f;
         SetAutomatic(ApplyHlgOotf, sourceIsSceneLinear, "Application source interpretation");
         SetAutomatic(SourcePeakNits, context.Source?.DetectedMetadata.NominalPeakNits ?? 100.0f, "Application source interpretation");
         SetAutomatic(GamutMapping, GamutMappingMode.PerceptualCompress, "Color correct v1");
         SetAutomatic(Background, BackgroundMode.ApplicationBackground, "Application theme");
+        SetAutomatic(SourceReferenceWhiteNits, sourceReferenceWhite, "Application source interpretation");
+        SetAutomatic(SourceIsRelative, sourceIsRelative, "Application source interpretation");
         Diagnostic = "固定终端过程；把上一张扩展 sRGB 线性图像映射到视图空间并提交显示。";
         NotifySummaryChanged();
     }
@@ -90,11 +95,11 @@ public sealed class ViewRenderingProcess : ProcessBase
             ApplyHlgOotf.Value,
             Interpolation.Value,
             SourcePeakNits.Value,
-            _sourceReferenceWhiteNits,
-            _sourceIsRelative);
+            SourceReferenceWhiteNits.Value,
+            SourceIsRelative.Value);
         renderer.SetPresentationBackground(Background.Value);
-        Renderer.ColorSpaceConversionOperation[] conversions = context.TakeColorConversions();
-        context.SetDisplayTarget(renderer.SetPresentationImage(input, conversions));
+        Renderer.PointwiseImageOperations operations = context.TakePointwiseOperations();
+        context.SetDisplayTarget(renderer.SetPresentationImage(input, operations));
         Diagnostic = $"视图映射参数已提交；使用 {InterpolationLabel(Interpolation.Value)} 插值，终端规范化、映射和编码在一个最终 GPU Pass 中执行。";
         return ValueTask.CompletedTask;
     }

@@ -50,19 +50,24 @@ public sealed class ColorSpaceConversionProcess : ProcessBase
         SetAutomatic(InputGamut, ColorPrimaries.Rec709, "scRGB decoder contract");
         SetAutomatic(OutputGamma, ColorTransferFunction.Linear, "Identity conversion default");
         SetAutomatic(OutputGamut, ColorPrimaries.Rec709, "Identity conversion default");
-        Diagnostic = "显式输入/输出色彩空间；不读取相邻过程元数据，等待融合到下一个 GPU Pass。";
+        Diagnostic = "显式转换输入/输出色彩空间；输出数值原样传递，不读取或发布过程元数据。";
         NotifySummaryChanged();
     }
 
     public override ValueTask ExecuteAsync(ProcessExecutionContext context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (InputGamma.Value == OutputGamma.Value && InputGamut.Value == OutputGamut.Value)
+        {
+            Diagnostic = "输入与输出契约相同；该原子 CST 为空操作，未加入 GPU 点运算队列。";
+            return ValueTask.CompletedTask;
+        }
         context.QueueColorConversion(new(
             InputGamma.Value,
             InputGamut.Value,
             OutputGamma.Value,
             OutputGamut.Value));
-        Diagnostic = $"已排队第 {context.PendingColorConversions.Count} 个点运算色彩转换；尚未分配中间纹理。";
+        Diagnostic = $"已排队第 {context.PendingColorConversions.Count} 个显式色彩转换；输出数值不会被自动转回 scRGB。";
         return ValueTask.CompletedTask;
     }
 

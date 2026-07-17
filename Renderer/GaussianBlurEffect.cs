@@ -29,10 +29,10 @@ internal sealed class GaussianBlurEffect : IDisposable
     {
         _device = device;
         string baseDirectory = AppContext.BaseDirectory;
-        _vertexShader = device.CreateVertexShader(Compiler.CompileFromFile(
-            Path.Combine(baseDirectory, "Renderer/Shaders/FullScreenVS.hlsl"), "main", "vs_5_0").Span);
-        _pixelShader = device.CreatePixelShader(Compiler.CompileFromFile(
-            Path.Combine(baseDirectory, "Renderer/Shaders/GaussianBlurPS.hlsl"), "main", "ps_5_0").Span);
+        _vertexShader = device.CreateVertexShader(ShaderBytecodeCache.Get(
+            Path.Combine(baseDirectory, "Renderer/Shaders/FullScreenVS.hlsl"), "main", "vs_5_0"));
+        _pixelShader = device.CreatePixelShader(ShaderBytecodeCache.Get(
+            Path.Combine(baseDirectory, "Renderer/Shaders/GaussianBlurPS.hlsl"), "main", "ps_5_0"));
         _pointSampler = device.CreateSamplerState(new SamplerDescription
         {
             Filter = Filter.MinMagMipPoint,

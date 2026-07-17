@@ -3,9 +3,10 @@ using Vortice.Direct3D11;
 namespace BrightEyes.Renderer;
 
 /// <summary>
-/// Owns one physical RGBA16F GPU image produced by the process graph. Decoder
-/// frames enter the graph in the fixed scRGB/linear contract; no per-node color
-/// metadata is carried by this object.
+/// Owns one physical GPU image produced by the process graph. A decoder upload
+/// may keep its atomic normalization deferred until the next sampling boundary;
+/// the coordinator materializes it before any image process can sample it.
+/// No per-node color metadata is carried by this object.
 /// </summary>
 public sealed class GpuImageFrame : IDisposable
 {

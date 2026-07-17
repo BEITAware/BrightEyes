@@ -201,8 +201,12 @@ public sealed class ProcessExecutionContext
     public GpuImageFrame? Image { get; private set; }
     public DisplayTargetFrame? DisplayTarget { get; private set; }
     public IReadOnlyList<ColorSpaceConversionOperation> PendingColorConversions => _pendingColorConversions;
+    internal bool HasPendingSourceNormalization => _pendingSourceNormalization is not null;
+    internal bool HasPendingPointwiseOperations =>
+        _pendingSourceNormalization is not null || _pendingColorConversions.Count > 0;
 
     private readonly List<ColorSpaceConversionOperation> _pendingColorConversions = new();
+    private SourceNormalizationOperation? _pendingSourceNormalization;
 
     public void SetImage(GpuImageFrame image)
     {
@@ -210,8 +214,18 @@ public sealed class ProcessExecutionContext
         DisplayTarget = null;
     }
 
-    public void SetDisplayTarget(DisplayTargetFrame target) =>
+    public void SetDisplayTarget(DisplayTargetFrame target)
+    {
         DisplayTarget = target ?? throw new ArgumentNullException(nameof(target));
+        _pendingSourceNormalization = null;
+    }
+
+    internal void QueueSourceNormalization(SourceNormalizationOperation operation)
+    {
+        if (_pendingSourceNormalization is not null)
+            throw new InvalidOperationException("源规范化操作只能由固定解码节点声明一次。");
+        _pendingSourceNormalization = operation;
+    }
 
     public void QueueColorConversion(ColorSpaceConversionOperation operation)
     {
@@ -222,9 +236,12 @@ public sealed class ProcessExecutionContext
         _pendingColorConversions.Add(operation);
     }
 
-    internal ColorSpaceConversionOperation[] TakeColorConversions()
+    internal PointwiseImageOperations TakePointwiseOperations()
     {
-        ColorSpaceConversionOperation[] result = _pendingColorConversions.ToArray();
+        var result = new PointwiseImageOperations(
+            _pendingSourceNormalization,
+            _pendingColorConversions.ToArray());
+        _pendingSourceNormalization = null;
         _pendingColorConversions.Clear();
         return result;
     }

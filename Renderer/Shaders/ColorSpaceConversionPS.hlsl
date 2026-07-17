@@ -150,7 +150,10 @@ float3 NormalizeSource(float3 value)
     float transfer = SourceParameters.x;
     float referenceWhite = max(SourceParameters.w, 0.001);
     float3 linearValue = DecodeNodeTransfer(value, transfer);
-    if (transfer < 0.5 || transfer > 1.5)
+    // HLG remains scene-relative until the application-injected render mapper
+    // applies its display-dependent OOTF. Other relative display encodings are
+    // scaled into the 80-nit scRGB contract here.
+    if (transfer < 0.5 || transfer > 2.5)
         linearValue *= referenceWhite / ScRgbNits;
     return FromRec2020(ToRec2020(linearValue, SourceParameters.y), 0.0);
 }
@@ -169,10 +172,7 @@ float4 main(PS_INPUT input) : SV_TARGET
     for (int index = 0; index < count; index++)
         value = ApplyOperation(value, Operations[index]);
 
-    if (count > 0)
-    {
-        float4 last = Operations[count - 1];
-        value = FromRec2020(ToRec2020(DecodeNodeTransfer(value, last.z), last.w), 0.0);
-    }
+    // Preserve the last CST's encoded values verbatim. Downstream process
+    // nodes are representation-transparent; another CST must convert them.
     return float4(value * alpha, alpha);
 }
