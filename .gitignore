@@ -93,5 +93,6 @@ Generated\ Files/
 新建文件夹/**/*.dll
 新建文件夹/**/*.exe
 新建文件夹/**/*.pdb
+REF/
 
 

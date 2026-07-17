@@ -2,6 +2,6 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <!-- Development fallback until this theme supplies its own complete resources. -->
     <ResourceDictionary.MergedDictionaries>
-        <ResourceDictionary Source="../Bureau Blue/Theme.xaml" />
+        <ResourceDictionary Source="../Aero Classic/Theme.xaml" />
     </ResourceDictionary.MergedDictionaries>
 </ResourceDictionary>

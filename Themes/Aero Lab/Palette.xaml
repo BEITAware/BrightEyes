@@ -1,6 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <!-- Bureau White keeps Bureau Blue's relief and scan-line texture, but removes
+    <!-- Aero Lab keeps Aero Classic's relief and scan-line texture, but removes
          chroma from passive chrome. Blue is reserved for active interaction. -->
     <Color x:Key="BureauWhiteAccentColor">#2B78B8</Color>
 

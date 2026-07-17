@@ -8,7 +8,7 @@
         <!-- The pipeline is an application-specific control surface and therefore
              has no platform fallback. Reuse its behavior/template, then recolor it
              through Luna's dynamic palette. -->
-        <ResourceDictionary Source="../Bureau Blue/ProcessPipeline.xaml" />
+        <ResourceDictionary Source="../Aero Classic/ProcessPipeline.xaml" />
         <ResourceDictionary Source="Palette.xaml" />
         <ResourceDictionary Source="Controls.xaml" />
         <ResourceDictionary Source="Ribbon.xaml" />

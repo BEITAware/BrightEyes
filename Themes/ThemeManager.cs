@@ -4,12 +4,12 @@ namespace BrightEyes.Themes;
 
 public static class ThemeManager
 {
-    public const string DefaultTheme = "Bureau Blue";
+    public const string DefaultTheme = "Aero Classic";
 
     public static IReadOnlyList<string> AvailableThemes { get; } =
     [
         DefaultTheme,
-        "Bureau White",
+        "Aero Lab",
         "Luna",
         "Polar Day",
         "Polar Night",

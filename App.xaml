@@ -11,7 +11,7 @@
                 <ResourceDictionary Source="Resources/Localization/Strings.zh-CN.xaml"/>
                 <ResourceDictionary Source="Themes/Shared/Shared.xaml"/>
                 <!-- ThemeManager replaces this final dictionary when a theme is selected. -->
-                <ResourceDictionary Source="Themes/Bureau Blue/Theme.xaml"/>
+                <ResourceDictionary Source="Themes/Aero Classic/Theme.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

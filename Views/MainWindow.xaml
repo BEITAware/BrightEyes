@@ -9,6 +9,7 @@
         xmlns:i="http://schemas.microsoft.com/xaml/behaviors"
         xmlns:r="clr-namespace:System.Windows.Controls.Ribbon;assembly=System.Windows.Controls.Ribbon"
         mc:Ignorable="d"
+        Icon="/BrightEyes;component/Resources/BrightEyes.ico"
         Title="BrightEyes" Height="780" Width="1280" MinHeight="620" MinWidth="980"
         Background="{DynamicResource WindowSurfaceBrush}" AllowDrop="True"
         PreviewDragOver="PipelineDragOver" PreviewDrop="PipelineDrop"
@@ -31,6 +32,158 @@
         </Grid.RowDefinitions>
 
         <r:Ribbon x:Name="MainRibbon" Grid.Row="0">
+            <r:Ribbon.ApplicationMenu>
+                <r:RibbonApplicationMenu LargeImageSource="/BrightEyes;component/Resources/BrightEyesAlt.png"
+                                          SmallImageSource="/BrightEyes;component/Resources/BrightEyesAlt.png"
+                                          ToolTip="BrightEyes">
+                    <r:RibbonApplicationMenu.Resources>
+                        <DataTemplate x:Key="ApplicationMenuTopHeaderTemplate">
+                            <TextBlock Text="{Binding}" FontWeight="SemiBold" />
+                        </DataTemplate>
+                        <DataTemplate x:Key="ApplicationMenuMiddleHeaderTemplate">
+                            <Grid Width="220" MinHeight="52">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding}" FontWeight="SemiBold" />
+                                    <TextBlock MinHeight="26" Margin="0,2,4,0"
+                                               Foreground="{DynamicResource ApplicationMutedTextBrush}"
+                                               FontSize="10" TextWrapping="Wrap"
+                                               Text="{Binding ToolTipDescription, RelativeSource={RelativeSource AncestorType={x:Type r:RibbonApplicationMenuItem}}}" />
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                        <Style TargetType="{x:Type r:RibbonApplicationMenuItem}">
+                            <Setter Property="Foreground" Value="{DynamicResource ApplicationPrimaryTextBrush}" />
+                            <Setter Property="HeaderTemplate" Value="{StaticResource ApplicationMenuTopHeaderTemplate}" />
+                            <Style.Triggers>
+                                <Trigger Property="Level" Value="Middle">
+                                    <Setter Property="HeaderTemplate" Value="{StaticResource ApplicationMenuMiddleHeaderTemplate}" />
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                        <Style TargetType="{x:Type r:RibbonApplicationSplitMenuItem}">
+                            <Setter Property="Foreground" Value="{DynamicResource ApplicationPrimaryTextBrush}" />
+                        </Style>
+                    </r:RibbonApplicationMenu.Resources>
+
+                    <r:RibbonApplicationMenuItem Header="打开图像…"
+                                                 ImageSource="/BrightEyes;component/Resources/open.png"
+                                                 ToolTipTitle="打开图像"
+                                                 ToolTipDescription="打开一幅图像，并在新的 BrightEyes 文档中开始工作。" />
+                    <r:RibbonApplicationMenuItem Header="加载过程…"
+                                                 ImageSource="/BrightEyes;component/Resources/load.png"
+                                                 ToolTipTitle="加载过程"
+                                                 ToolTipDescription="从已保存的过程文件中载入调整步骤和参数。" />
+
+                    <r:RibbonApplicationSplitMenuItem Header="保存"
+                                                      ImageSource="/BrightEyes;component/Resources/save.png"
+                                                      ToolTipTitle="保存过程"
+                                                      ToolTipDescription="保存当前图像所使用的过程和参数。">
+                        <r:RibbonApplicationMenuItem Header="在原位置保存过程"
+                                                     ImageSource="/BrightEyes;component/Resources/save.png"
+                                                     ToolTipTitle="在原位置保存过程"
+                                                     ToolTipDescription="使用当前名称和位置，保存对此过程所作的更改。" />
+                        <r:RibbonApplicationMenuItem Header="在 BrightEyes 目录保存过程"
+                                                     ImageSource="/BrightEyes;component/Resources/WorkFolder.png"
+                                                     ToolTipTitle="保存到 BrightEyes 目录"
+                                                     ToolTipDescription="将过程放入 BrightEyes 目录，以便日后快速取用。" />
+                        <r:RibbonApplicationMenuItem Header="将过程保存为…"
+                                                     ImageSource="/BrightEyes;component/Resources/save.png"
+                                                     ToolTipTitle="将过程保存为"
+                                                     ToolTipDescription="选择名称和位置，将当前过程保存为单独的文件。" />
+                        <r:RibbonApplicationMenuItem Header="保存为 BrightEyes Spect…"
+                                                     ImageSource="/BrightEyes;component/Resources/Script.png"
+                                                     ToolTipTitle="保存为 BrightEyes Spect"
+                                                     ToolTipDescription="采用 BrightEyes Spect 格式保存，以保留完整的过程信息。" />
+                    </r:RibbonApplicationSplitMenuItem>
+
+                    <r:RibbonApplicationSplitMenuItem Header="导出"
+                                                      ImageSource="/BrightEyes;component/Resources/export.png"
+                                                      ToolTipTitle="导出图像"
+                                                      ToolTipDescription="从当前图像创建用于交付或发布的文件。">
+                        <r:RibbonApplicationMenuItem Header="快速导出为…"
+                                                     ImageSource="/BrightEyes;component/Resources/ExportImage.png"
+                                                     ToolTipTitle="快速导出"
+                                                     ToolTipDescription="使用推荐设置，创建可立即使用的图像副本。" />
+                        <r:RibbonApplicationMenuItem Header="高级导出为…"
+                                                     ImageSource="/BrightEyes;component/Resources/ColorManager.png"
+                                                     ToolTipTitle="高级导出"
+                                                     ToolTipDescription="选择文件格式、质量和色彩选项，然后导出图像。" />
+                        <r:RibbonApplicationMenuItem Header="导出为 BrightEyes Spect…"
+                                                     ImageSource="/BrightEyes;component/Resources/Script.png"
+                                                     ToolTipTitle="导出为 BrightEyes Spect"
+                                                     ToolTipDescription="创建 BrightEyes Spect 文件，以便在受支持的工作流程中继续使用。" />
+                    </r:RibbonApplicationSplitMenuItem>
+
+                    <r:RibbonApplicationSplitMenuItem Header="分享"
+                                                      ImageSource="/BrightEyes;component/Resources/ForwardArrowAlt.png"
+                                                      ToolTipTitle="分享图像"
+                                                      ToolTipDescription="通过 Windows 中可用的服务发送当前图像。">
+                        <r:RibbonApplicationMenuItem Header="发送到电子邮件…"
+                                                     ImageSource="/BrightEyes;component/Resources/ForwardArrow.png"
+                                                     ToolTipTitle="发送到电子邮件"
+                                                     ToolTipDescription="将当前图像作为附件放入一封新的电子邮件。" />
+                        <r:RibbonApplicationMenuItem Header="发送传真…"
+                                                     ImageSource="/BrightEyes;component/Resources/Script.png"
+                                                     ToolTipTitle="发送传真"
+                                                     ToolTipDescription="使用 Windows 传真和扫描发送当前图像。" />
+                    </r:RibbonApplicationSplitMenuItem>
+
+                    <r:RibbonApplicationSplitMenuItem Header="打印"
+                                                      ImageSource="/BrightEyes;component/Resources/image.png"
+                                                      ToolTipTitle="打印图像"
+                                                      ToolTipDescription="在本地或网络打印机上输出当前图像。">
+                        <r:RibbonApplicationMenuItem Header="快速打印一张…"
+                                                     ImageSource="/BrightEyes;component/Resources/image.png"
+                                                     ToolTipTitle="快速打印一张"
+                                                     ToolTipDescription="使用默认打印机和推荐设置，打印一张当前图像。" />
+                        <r:RibbonApplicationMenuItem Header="高级打印…"
+                                                     ImageSource="/BrightEyes;component/Resources/ColorManager.png"
+                                                     ToolTipTitle="高级打印"
+                                                     ToolTipDescription="在打印前选择版面、色彩管理和输出设置。" />
+                        <r:RibbonApplicationMenuItem Header="Windows 打印…"
+                                                     ImageSource="/BrightEyes;component/Resources/Setup.png"
+                                                     ToolTipTitle="Windows 打印"
+                                                     ToolTipDescription="打开 Windows 打印对话框，选择打印机和系统选项。" />
+                    </r:RibbonApplicationSplitMenuItem>
+
+                    <r:RibbonSeparator />
+                    <r:RibbonApplicationMenuItem Header="关闭图像"
+                                                 ImageSource="/BrightEyes;component/Resources/CrossMark.png"
+                                                 ToolTipTitle="关闭图像"
+                                                 ToolTipDescription="关闭当前图像；如有未保存的更改，BrightEyes 将提示您。" />
+
+                    <r:RibbonApplicationMenu.FooterPaneContent>
+                        <Border Padding="7,5"
+                                Background="{DynamicResource DocumentBarBackgroundBrush}"
+                                BorderBrush="{DynamicResource ApplicationChromeBorderBrush}"
+                                BorderThickness="0,1,0,0">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Margin="3,0" Padding="7,4" ToolTip="设置 BrightEyes 的常规选项和工作方式。">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Image Width="16" Height="16" Margin="0,0,5,0"
+                                               Source="/BrightEyes;component/Resources/Setup.png" />
+                                        <TextBlock VerticalAlignment="Center" Text="BrightEyes 首选项" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Margin="3,0" Padding="7,4" ToolTip="关闭 BrightEyes。">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Image Width="16" Height="16" Margin="0,0,5,0"
+                                               Source="/BrightEyes;component/Resources/CrossMark.png" />
+                                        <TextBlock VerticalAlignment="Center" Text="退出 BrightEyes" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Margin="3,0" Padding="7,4" ToolTip="关闭 BrightEyes，并在下次启动时重新打开当前图像。">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Image Width="16" Height="16" Margin="0,0,5,0"
+                                               Source="/BrightEyes;component/Resources/Refresh.png" />
+                                        <TextBlock VerticalAlignment="Center" Text="退出 BrightEyes（记住打开的图像）" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </r:RibbonApplicationMenu.FooterPaneContent>
+                </r:RibbonApplicationMenu>
+            </r:Ribbon.ApplicationMenu>
             <r:RibbonTab Header="{DynamicResource ResourceKey=Ribbon_Tab_File}">
                 <r:RibbonGroup Header="文档">
                     <r:RibbonButton Label="打开" LargeImageSource="/BrightEyes;component/Resources/open.png" Command="{Binding OpenImageCommand}" />
@@ -58,8 +211,8 @@
 
             <r:RibbonTab Header="主题测试">
                 <r:RibbonGroup Header="主题">
-                    <r:RibbonButton Label="Bureau Blue" Tag="Bureau Blue" Click="ThemeButton_Click" />
-                    <r:RibbonButton Label="Bureau White" Tag="Bureau White" Click="ThemeButton_Click" />
+                    <r:RibbonButton Label="Aero Classic" Tag="Aero Classic" Click="ThemeButton_Click" />
+                    <r:RibbonButton Label="Aero Lab" Tag="Aero Lab" Click="ThemeButton_Click" />
                     <r:RibbonButton Label="Luna" Tag="Luna" Click="ThemeButton_Click" />
                     <r:RibbonButton Label="Polar Day" Tag="Polar Day" Click="ThemeButton_Click" />
                     <r:RibbonButton Label="Polar Night" Tag="Polar Night" Click="ThemeButton_Click" />
