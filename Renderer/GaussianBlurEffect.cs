@@ -22,7 +22,6 @@ internal sealed class GaussianBlurEffect : IDisposable
     {
         public Vector2 SourceSize;
         public Vector2 TexelStep;
-        public Vector4 SourceParameters;
         public Vector4 BlurParameters;
     }
 
@@ -58,14 +57,14 @@ internal sealed class GaussianBlurEffect : IDisposable
     {
         radius = Math.Clamp(radius, 0, 64);
         sigma = float.IsFinite(sigma) ? Math.Clamp(sigma, 0.1f, 32.0f) : 4.0f;
-        GpuImageFrame horizontal = CreateTarget(source.Width, source.Height, source.ColorMetadata, source.RequiresHlgOotf);
+        GpuImageFrame horizontal = CreateTarget(source.Width, source.Height);
         try
         {
-            DrawPass(context, source.ShaderResourceView, horizontal, source.ColorMetadata, radius, sigma, true, true);
-            GpuImageFrame output = CreateTarget(source.Width, source.Height, source.ColorMetadata, source.RequiresHlgOotf);
+            DrawPass(context, source.ShaderResourceView, horizontal, radius, sigma, true);
+            GpuImageFrame output = CreateTarget(source.Width, source.Height);
             try
             {
-                DrawPass(context, horizontal.ShaderResourceView, output, horizontal.ColorMetadata, radius, sigma, false, false);
+                DrawPass(context, horizontal.ShaderResourceView, output, radius, sigma, false);
                 return output;
             }
             catch
@@ -80,26 +79,7 @@ internal sealed class GaussianBlurEffect : IDisposable
         }
     }
 
-    public GpuImageFrame Materialize(ID3D11DeviceContext context, GpuImageFrame source)
-    {
-        GpuImageFrame output = CreateTarget(source.Width, source.Height, source.ColorMetadata, source.RequiresHlgOotf);
-        try
-        {
-            DrawPass(context, source.ShaderResourceView, output, source.ColorMetadata, 0, 1.0f, true, true);
-            return output;
-        }
-        catch
-        {
-            output.Dispose();
-            throw;
-        }
-    }
-
-    private GpuImageFrame CreateTarget(
-        int width,
-        int height,
-        ColorSourceMetadata sourceMetadata,
-        bool requiresHlgOotf)
+    private GpuImageFrame CreateTarget(int width, int height)
     {
         var description = new Texture2DDescription
         {
@@ -114,24 +94,16 @@ internal sealed class GaussianBlurEffect : IDisposable
         };
         ID3D11Texture2D texture = _device.CreateTexture2D(description);
         ID3D11ShaderResourceView view = _device.CreateShaderResourceView(texture);
-        var outputMetadata = new ColorSourceMetadata(
-            ColorTransferFunction.Linear,
-            ColorPrimaries.Rec709,
-            sourceMetadata.Alpha == AlphaRepresentation.Opaque ? AlphaRepresentation.Opaque : AlphaRepresentation.Premultiplied,
-            sourceMetadata.ReferenceWhiteNits,
-            sourceMetadata.NominalPeakNits);
-        return new GpuImageFrame(texture, view, width, height, outputMetadata, true, requiresHlgOotf);
+        return new GpuImageFrame(texture, view, width, height);
     }
 
     private void DrawPass(
         ID3D11DeviceContext context,
         ID3D11ShaderResourceView source,
         GpuImageFrame destination,
-        ColorSourceMetadata sourceMetadata,
         int radius,
         float sigma,
-        bool horizontal,
-        bool decodeInput)
+        bool horizontal)
     {
         using ID3D11RenderTargetView target = _device.CreateRenderTargetView(destination.Texture);
         var constants = new BlurConstants
@@ -140,12 +112,7 @@ internal sealed class GaussianBlurEffect : IDisposable
             TexelStep = horizontal
                 ? new Vector2(1.0f / destination.Width, 0.0f)
                 : new Vector2(0.0f, 1.0f / destination.Height),
-            SourceParameters = new Vector4(
-                (float)sourceMetadata.Transfer,
-                (float)sourceMetadata.Primaries,
-                (float)sourceMetadata.Alpha,
-                sourceMetadata.ReferenceWhiteNits),
-            BlurParameters = new Vector4(radius, sigma, decodeInput ? 1.0f : 0.0f, sourceMetadata.NominalPeakNits)
+            BlurParameters = new Vector4(radius, sigma, 0.0f, 0.0f)
         };
         MappedSubresource mapped = context.Map(
             _constantBuffer,

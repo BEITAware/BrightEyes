@@ -67,7 +67,11 @@ internal static class WindowsDisplayMetadata
         return false;
     }
 
-    [DllImport("user32.dll")]
+    // MONITORINFOEX contains a TCHAR device name. Be explicit about calling
+    // GetMonitorInfoW so DeviceName is decoded the same way as the Unicode
+    // DISPLAYCONFIG_SOURCE_DEVICE_NAME returned below.
+    [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW", ExactSpelling = true, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfoEx monitorInfo);
 
     [DllImport("user32.dll")]

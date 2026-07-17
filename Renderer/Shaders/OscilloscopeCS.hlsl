@@ -19,7 +19,7 @@ cbuffer AnalysisConstants : register(b0)
 
 float SrgbToLinear(float value)
 {
-    return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4);
+    return value <= 0.04045 ? value / 12.92 : pow(max((value + 0.055) / 1.055, 0.0), 2.4);
 }
 
 float PqToNits(float value)

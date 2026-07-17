@@ -14,6 +14,7 @@ public static class BuiltInProcessIds
     public const string Vectorscope = "brighteyes.vectorscope";
     public const string StrictHistogram = "brighteyes.strict-histogram";
     public const string GaussianBlur = "brighteyes.gaussian-blur";
+    public const string ColorSpaceConversion = "brighteyes.color-space-conversion";
 }
 
 public enum DecoderBackend

@@ -18,7 +18,9 @@ public sealed class ProcessCatalogItemViewModel
     public string Name { get; }
     public string Description { get; }
     public ImageSource? Icon { get; }
-    public string HardTypeLabel => $"{Descriptor.Definition.InputType} -> {Descriptor.Definition.OutputType}";
+    public string ExecutionLabel => Descriptor.Definition.RequiresIntermediateTexture
+        ? $"{Descriptor.Definition.Role} / intermediate texture"
+        : $"{Descriptor.Definition.Role} / fusible";
 }
 
 public sealed class ProcessRibbonGroupViewModel

@@ -20,6 +20,8 @@
     <system:String x:Key="Process_ViewRendering_Description">Maps a linear extended-sRGB intermediate into view space, then encodes and presents it.</system:String>
     <system:String x:Key="Process_GaussianBlur_Name">Gaussian blur</system:String>
     <system:String x:Key="Process_GaussianBlur_Description">Runs a separable GPU Gaussian convolution and produces an independent RGBA16F linear intermediate texture.</system:String>
+    <system:String x:Key="Process_ColorSpaceConversion_Name">Color space conversion</system:String>
+    <system:String x:Key="Process_ColorSpaceConversion_Description">Explicitly converts input gamma/gamut to output gamma/gamut. Adjacent conversions are fused and do not exchange metadata.</system:String>
     <system:String x:Key="Process_Waveform_Name">Waveform</system:String>
     <system:String x:Key="Process_Waveform_Description">Plots horizontal signal distribution as luminance, RGB parade, or RGB overlay with linear amplitude.</system:String>
     <system:String x:Key="Process_Histogram_Name">Histogram</system:String>
@@ -38,6 +40,11 @@
     <system:String x:Key="Parameter_Interpolation">Interpolation</system:String>
     <system:String x:Key="Parameter_BlurRadius">Blur radius</system:String>
     <system:String x:Key="Parameter_BlurSigma">Sigma</system:String>
+    <system:String x:Key="Parameter_InputGamma">Input gamma</system:String>
+    <system:String x:Key="Parameter_InputGamut">Input gamut</system:String>
+    <system:String x:Key="Parameter_OutputGamma">Output gamma</system:String>
+    <system:String x:Key="Parameter_OutputGamut">Output gamut</system:String>
+    <system:String x:Key="Parameter_SourcePeak">Source nominal peak</system:String>
     <system:String x:Key="Parameter_SdrWhite">SDR white</system:String>
     <system:String x:Key="Parameter_TargetPeak">Target peak</system:String>
     <system:String x:Key="Parameter_HlgOotf">HLG OOTF</system:String>

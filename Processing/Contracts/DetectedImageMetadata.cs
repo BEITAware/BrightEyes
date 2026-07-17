@@ -94,27 +94,10 @@ public sealed class RawImage
     public string ContentIdentity { get; }
 }
 
-public sealed record CurrentImageMetadata(
-    ImageSemantics Semantics,
-    string PixelFormat,
-    string Storage,
-    IReadOnlyList<string> TransformHistory);
-
-public sealed record BrightEyesIntermediateImage(
-    object GpuResourceIdentity,
-    DetectedImageMetadata SourceMetadata,
-    CurrentImageMetadata CurrentMetadata,
-    object? AuxiliaryPlanes = null)
-{
-    public const string DefaultPixelFormat = "R32G32B32A32_FLOAT";
-    public const float NitsPerScRgbUnit = 80.0f;
-}
-
 public sealed record AnalysisData(
     AnalysisKind Kind,
     AnalysisChannel Channel,
     AnalysisPresentation Presentation,
     bool LogarithmicScale,
     ReadOnlyMemory<float> Values,
-    ImageSemantics SignalSemantics,
     DateTimeOffset Timestamp);

@@ -24,8 +24,6 @@ public sealed class PipelineChangedEventArgs : EventArgs
 
 public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
 {
-    public const bool AllowIncompatiblePlacements = true;
-
     private readonly ProcessRegistry _registry;
     private DisplayColorMetadata _displayMetadata;
     private IImageProcess? _selectedProcess;
@@ -57,7 +55,6 @@ public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
     public CancellationTokenSource? ExecutionCancellation { get; set; }
     public long ExecutionGeneration { get; set; }
     public bool HasLastValidFrame { get; set; }
-    public DecodedImageFrame? DecodedFrame { get; set; }
     public GpuImageFrame? DecodedGpuFrame { get; set; }
     public GpuImageFrame? FinalGpuFrame { get; set; }
 
@@ -96,8 +93,7 @@ public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
     {
         if (!CanInsertStructurally(descriptor, index, out string structuralReason))
             throw new InvalidOperationException(structuralReason);
-        bool compatible = CanInsert(descriptor, index, out string reason);
-        if (!(compatible || AllowIncompatiblePlacements))
+        if (!CanInsert(descriptor, index, out string reason))
             throw new InvalidOperationException(reason);
 
         IImageProcess process = descriptor.Create();
@@ -134,8 +130,7 @@ public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
         if (oldIndex < 0 || oldIndex == targetIndex) return false;
         int adjustedTarget = targetIndex > oldIndex ? targetIndex - 1 : targetIndex;
         if (!CanMoveStructurally(process, adjustedTarget, out _)) return false;
-        bool compatible = CanMoveAtRemainingIndex(process, adjustedTarget, out _);
-        if (!(compatible || AllowIncompatiblePlacements)) return false;
+        if (!CanMoveAtRemainingIndex(process, adjustedTarget, out _)) return false;
         MoveExisting(process, adjustedTarget);
         if (recordUndo)
         {
@@ -164,38 +159,7 @@ public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
 
     public bool CanInsert(ProcessDescriptor descriptor, int index, out string reason)
     {
-        index = Math.Clamp(index, 0, Processes.Count);
-        if (!CanInsertStructurally(descriptor, index, out reason)) return false;
-        if (descriptor.Definition.InputType == ProcessDataType.None && index != 0)
-        {
-            reason = "无输入过程只能位于流程首位。";
-            return false;
-        }
-        if (index == 0 && descriptor.Definition.InputType != ProcessDataType.None)
-        {
-            reason = $"{descriptor.Definition.StableId} 需要 {descriptor.Definition.InputType} 输入。";
-            return false;
-        }
-        ProcessDataType previous = GetEffectiveOutputType(Processes.Take(index));
-        if (index > 0 && !ProcessConnectionPolicy.CanAccept(previous, descriptor.Definition))
-        {
-            reason = $"硬类型不兼容：上游输出 {previous}，过程输入要求 {descriptor.Definition.InputType}。";
-            return false;
-        }
-        if (index < Processes.Count)
-        {
-            ProcessDefinitionAttribute next = Processes[index].Descriptor.Definition;
-            ProcessDataType output = ProcessConnectionPolicy.GetEffectiveOutputType(previous, descriptor.Definition);
-            if (!ProcessConnectionPolicy.CanAccept(output, next))
-            {
-                reason = $"硬类型不兼容：过程输出 {output}，下游要求 {next.InputType}。";
-                return false;
-            }
-        }
-        reason = descriptor.Definition.ImageReadOnly
-            ? "图像只读过程透明连接；不会改变上游图像或流程硬类型。"
-            : "硬类型兼容；色彩和光度语义差异只会生成非阻塞警告。";
-        return true;
+        return CanInsertStructurally(descriptor, index, out reason);
     }
 
     public bool CanInsertStructurally(ProcessDescriptor descriptor, int index, out string reason)
@@ -212,15 +176,7 @@ public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
             reason = $"过程 {descriptor.Definition.StableId} 是唯一过程。";
             return false;
         }
-        int terminalIndex = Processes.ToList().FindIndex(process =>
-            process.Descriptor.Definition.StableId == BuiltInProcessIds.ViewRendering);
-        if (terminalIndex >= 0 && index > terminalIndex && !descriptor.Definition.ImageReadOnly)
-        {
-            reason = "视图渲染之后只能添加 ImageReadOnly 图像只读过程。";
-            return false;
-        }
-        reason = "文档结构允许放置。";
-        return true;
+        return CanPlaceRole(descriptor.Definition.Role, Processes, index, out reason);
     }
 
     public bool CanMove(IImageProcess process, int targetIndex, out string reason)
@@ -250,20 +206,7 @@ public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
         }
         var remaining = Processes.Where(item => !ReferenceEquals(item, process)).ToList();
         targetIndex = Math.Clamp(targetIndex, 0, remaining.Count);
-        int sourceIndex = remaining.FindIndex(item => item.Descriptor.Definition.StableId == BuiltInProcessIds.ImageSource);
-        int terminalIndex = remaining.FindIndex(item => item.Descriptor.Definition.StableId == BuiltInProcessIds.ViewRendering);
-        if (sourceIndex >= 0 && targetIndex <= sourceIndex)
-        {
-            reason = "不能把过程移动到固定图像源之前。";
-            return false;
-        }
-        if (terminalIndex >= 0 && targetIndex > terminalIndex && !process.Descriptor.Definition.ImageReadOnly)
-        {
-            reason = "只有 ImageReadOnly 图像只读过程可以移动到视图渲染之后。";
-            return false;
-        }
-        reason = "文档结构允许移动。";
-        return true;
+        return CanPlaceRole(process.Descriptor.Definition.Role, remaining, targetIndex, out reason);
     }
 
     private bool CanMoveAtRemainingIndex(IImageProcess process, int targetIndex, out string reason)
@@ -271,87 +214,62 @@ public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
         var remaining = Processes.Where(item => !ReferenceEquals(item, process)).ToList();
         targetIndex = Math.Clamp(targetIndex, 0, remaining.Count);
         if (!CanMoveStructurally(process, targetIndex, out reason)) return false;
-        ProcessDataType input = GetEffectiveOutputType(remaining.Take(targetIndex));
-        ProcessDefinitionAttribute definition = process.Descriptor.Definition;
-        if (!ProcessConnectionPolicy.CanAccept(input, definition))
-        {
-            reason = $"硬类型不兼容：目标上游输出 {input}，过程要求 {definition.InputType}。";
-            return false;
-        }
-        ProcessDataType output = ProcessConnectionPolicy.GetEffectiveOutputType(input, definition);
-        if (targetIndex < remaining.Count &&
-            !ProcessConnectionPolicy.CanAccept(output, remaining[targetIndex].Descriptor.Definition))
-        {
-            reason = $"硬类型不兼容：过程输出 {output}，目标下游要求 {remaining[targetIndex].Descriptor.Definition.InputType}。";
-            return false;
-        }
-        reason = definition.ImageReadOnly
-            ? "可以放置；图像只读过程不会改变上游图像或流程硬类型。"
-            : "可以放置；任何色彩语义差异将在放置后显示警告。";
-        return true;
+        return CanPlaceRole(process.Descriptor.Definition.Role, remaining, targetIndex, out reason);
     }
 
     public void RecalculateAndValidate()
     {
-        ProcessDataType previousType = ProcessDataType.None;
-        ImageSemantics? previousSemantics = null;
-        for (int index = 0; index < Processes.Count; index++)
+        foreach (IImageProcess process in Processes)
         {
-            IImageProcess process = Processes[index];
-            ProcessDefinitionAttribute definition = process.Descriptor.Definition;
-            process.RecalculateAutomaticParameters(new(Source, DisplayMetadata, previousSemantics));
-            bool hardCompatible = ProcessConnectionPolicy.CanAccept(previousType, definition);
-            if (index == 0 && definition.InputType == ProcessDataType.None) hardCompatible = true;
-
-            if (index == 0)
-            {
-                process.IncomingConnectionSeverity = ConnectionSeverity.None;
-                process.IncomingConnectionLabel = "源";
-                process.IncomingConnectionMessage = "流程起点";
-            }
-            else if (!hardCompatible)
-            {
-                process.IncomingConnectionSeverity = ConnectionSeverity.HardError;
-                process.IncomingConnectionLabel = $"{previousType} -> {definition.InputType}";
-                process.IncomingConnectionMessage = $"硬类型不兼容：上游输出 {previousType}，当前过程要求 {definition.InputType}。";
-                process.State = ProcessState.Error;
-                process.Diagnostic = process.IncomingConnectionMessage;
-            }
-            else
-            {
-                ProcessState previousState = process.State;
-                IReadOnlyList<string> warnings = previousSemantics is null
-                    ? Array.Empty<string>()
-                    : process.ValidateSemanticInput(previousSemantics);
-                process.IncomingConnectionSeverity = warnings.Count == 0 ? ConnectionSeverity.Compatible : ConnectionSeverity.SemanticWarning;
-                process.IncomingConnectionLabel = definition.ImageReadOnly
-                    ? $"{previousType} / 只读"
-                    : definition.InputType.ToString();
-                process.IncomingConnectionMessage = warnings.Count == 0
-                    ? definition.ImageReadOnly
-                        ? $"ImageReadOnly 透明连接：只读访问 {previousType}，不改变图像。"
-                        : $"硬类型兼容：{definition.InputType}"
-                    : string.Join(Environment.NewLine, warnings);
-                if (warnings.Count > 0 && process.State is not (ProcessState.Running or ProcessState.Error or ProcessState.Disabled))
-                    process.State = ProcessState.Warning;
-                else if (warnings.Count == 0 && previousState is ProcessState.Warning or ProcessState.Error)
-                    process.State = HasExecuted ? ProcessState.Stale : ProcessState.NotRun;
-            }
-
+            process.RecalculateAutomaticParameters(new(Source, DisplayMetadata));
             if (!process.IsEnabled)
-            {
                 process.State = ProcessState.Disabled;
-                if (definition.ImageReadOnly || definition.InputType == definition.OutputType)
-                {
-                    previousType = ProcessConnectionPolicy.GetEffectiveOutputType(previousType, definition);
-                    continue;
-                }
-            }
-
-            previousType = ProcessConnectionPolicy.GetEffectiveOutputType(previousType, definition);
-            previousSemantics = process.OutputSemantics ?? previousSemantics;
         }
         OnPropertyChanged(nameof(Processes));
+    }
+
+    private static bool CanPlaceRole(
+        ProcessRole role,
+        IReadOnlyList<IImageProcess> pipeline,
+        int index,
+        out string reason)
+    {
+        index = Math.Clamp(index, 0, pipeline.Count);
+        int decoderIndex = pipeline.ToList().FindIndex(item => item.Descriptor.Definition.Role == ProcessRole.Decoder);
+        int terminalIndex = pipeline.ToList().FindIndex(item => item.Descriptor.Definition.Role == ProcessRole.Terminal);
+        switch (role)
+        {
+            case ProcessRole.Source:
+                reason = "图像源是固定的流程起点。";
+                return index == 0 && pipeline.All(item => item.Descriptor.Definition.Role != ProcessRole.Source);
+            case ProcessRole.Decoder:
+                reason = "解码器必须紧跟图像源，并且每个文档只能有一个。";
+                return index == 1 && pipeline.All(item => item.Descriptor.Definition.Role != ProcessRole.Decoder);
+            case ProcessRole.Image:
+                if (decoderIndex < 0 || index <= decoderIndex)
+                {
+                    reason = "图像过程必须位于解码器之后。";
+                    return false;
+                }
+                if (terminalIndex >= 0 && index > terminalIndex)
+                {
+                    reason = "图像过程必须位于显示终端之前。";
+                    return false;
+                }
+                reason = "图像过程独立处理统一 GPU 图像流。";
+                return true;
+            case ProcessRole.Observer:
+                reason = "观察过程可位于解码器之后的任意采样位置。";
+                return decoderIndex >= 0 && index > decoderIndex;
+            case ProcessRole.Terminal:
+                bool afterAllImageProcesses = !pipeline.Skip(index)
+                    .Any(item => item.Descriptor.Definition.Role == ProcessRole.Image);
+                reason = "显示终端必须位于全部图像过程之后，并且每个文档只能有一个。";
+                return decoderIndex >= 0 && index > decoderIndex && terminalIndex < 0 && afterAllImageProcesses;
+            default:
+                reason = "未知过程角色。";
+                return false;
+        }
     }
 
     public void MarkSaved()
@@ -361,19 +279,18 @@ public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
 
     public void RestorePipeline(IReadOnlyList<IImageProcess> restoredProcesses)
     {
-        bool beginsWithImageSource = restoredProcesses.Count > 0 &&
-                                     restoredProcesses[0].Descriptor.Definition.StableId == BuiltInProcessIds.ImageSource;
-        int viewRenderingIndex = restoredProcesses.ToList().FindIndex(process =>
-            process.Descriptor.Definition.StableId == BuiltInProcessIds.ViewRendering);
-        bool hasValidViewTail = viewRenderingIndex > 0 && restoredProcesses
-            .Skip(viewRenderingIndex + 1)
-            .All(process => process.Descriptor.Definition.ImageReadOnly);
-        bool hasUniqueCoreProcesses = restoredProcesses.Count(process =>
-                                          process.Descriptor.Definition.StableId == BuiltInProcessIds.ImageSource) == 1 &&
-                                      restoredProcesses.Count(process =>
-                                          process.Descriptor.Definition.StableId == BuiltInProcessIds.ViewRendering) == 1;
-        if (!beginsWithImageSource || !hasValidViewTail || !hasUniqueCoreProcesses)
-            throw new InvalidDataException("保存的流程必须以唯一图像源开始；视图渲染之后只能包含 ImageReadOnly 图像只读过程。");
+        bool valid = restoredProcesses.Count >= 3 &&
+                     restoredProcesses[0].Descriptor.Definition.Role == ProcessRole.Source &&
+                     restoredProcesses[1].Descriptor.Definition.Role == ProcessRole.Decoder &&
+                     restoredProcesses.Count(process => process.Descriptor.Definition.Role == ProcessRole.Source) == 1 &&
+                     restoredProcesses.Count(process => process.Descriptor.Definition.Role == ProcessRole.Decoder) == 1 &&
+                     restoredProcesses.Count(process => process.Descriptor.Definition.Role == ProcessRole.Terminal) == 1;
+        int terminalIndex = restoredProcesses.ToList().FindIndex(process =>
+            process.Descriptor.Definition.Role == ProcessRole.Terminal);
+        valid &= terminalIndex > 1 && restoredProcesses.Skip(terminalIndex + 1)
+            .All(process => process.Descriptor.Definition.Role == ProcessRole.Observer);
+        if (!valid)
+            throw new InvalidDataException("保存的流程必须以唯一图像源和解码器开始，并包含唯一显示终端；终端之后只能放置观察过程。");
         foreach (IImageProcess process in Processes) Unsubscribe(process);
         Processes.Clear();
         foreach (IImageProcess process in restoredProcesses)
@@ -393,14 +310,6 @@ public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
         InsertExisting(source, 0, false);
         InsertExisting(_registry.GetRequired(BuiltInProcessIds.Decoder).Create(), 1, false);
         InsertExisting(_registry.GetRequired(BuiltInProcessIds.ViewRendering).Create(), 2, false);
-    }
-
-    private static ProcessDataType GetEffectiveOutputType(IEnumerable<IImageProcess> processes)
-    {
-        ProcessDataType type = ProcessDataType.None;
-        foreach (IImageProcess process in processes)
-            type = ProcessConnectionPolicy.GetEffectiveOutputType(type, process.Descriptor.Definition);
-        return type;
     }
 
     private void InsertExisting(IImageProcess process, int index, bool notify = true)
@@ -489,7 +398,8 @@ public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
         if (_isDisposed) return;
         ExecutionCancellation?.Cancel();
         ExecutionCancellation?.Dispose();
-        FinalGpuFrame?.Dispose();
+        if (FinalGpuFrame is not null && !ReferenceEquals(FinalGpuFrame, DecodedGpuFrame))
+            FinalGpuFrame.Dispose();
         DecodedGpuFrame?.Dispose();
         FinalGpuFrame = null;
         DecodedGpuFrame = null;

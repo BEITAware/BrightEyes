@@ -35,6 +35,7 @@ namespace BrightEyes.Renderer
         private ID3D11PixelShader? _pixelShader;
         private ID3D11ShaderResourceView? _hdrShaderResourceView;
         private ColorManagementEffect? _colorManagementEffect;
+        private ColorSpaceConversionEffect? _colorSpaceConversionEffect;
         private GpuOscilloscopeEffect? _gpuOscilloscopeEffect;
         private GaussianBlurEffect? _gaussianBlurEffect;
 
@@ -44,6 +45,8 @@ namespace BrightEyes.Renderer
         private ID3D11ShaderResourceView? _externalTextureShaderResourceView;
         private ColorSourceMetadata _externalColorMetadata = ColorSourceMetadata.PqRec2020Opaque;
         private bool _externalRequiresHlgOotf;
+        private bool _externalIsCanonicalScRgb;
+        private ColorSpaceConversionOperation[] _presentationColorConversions = Array.Empty<ColorSpaceConversionOperation>();
         private bool _externalTextureOwned = false;
 
         private Thread? _renderThread;
@@ -70,6 +73,9 @@ namespace BrightEyes.Renderer
         private float _sdrReferenceWhiteNits = 100.0f;
         private float _sdrDisplayPeakNits = 100.0f;
         private float _targetPeakNits = 1000.0f;
+        private float _sourcePeakNits = 100.0f;
+        private float _sourceReferenceWhiteNits = 100.0f;
+        private bool _sourceIsRelative = true;
         private ToneMappingMode _toneMappingMode = ToneMappingMode.ColorCorrectV1;
         private GamutMappingMode _gamutMappingMode = GamutMappingMode.PerceptualCompress;
         private ViewInterpolationMode _viewInterpolationMode = ViewInterpolationMode.BrightEyesBilinear;
@@ -215,6 +221,7 @@ namespace BrightEyes.Renderer
                _pixelShader = _device.CreatePixelShader(pixelShaderByteCode.Span);
 
                _colorManagementEffect = new ColorManagementEffect(_device);
+               _colorSpaceConversionEffect = new ColorSpaceConversionEffect(_device);
                _gaussianBlurEffect = new GaussianBlurEffect(_device);
                try
                {
@@ -354,14 +361,19 @@ namespace BrightEyes.Renderer
                             _sourceHeight,
                             _externalColorMetadata,
                             EffectiveDisplayMetadata(),
-                            _sdrReferenceWhiteNits,
-                            _sdrDisplayPeakNits,
+                             _sdrReferenceWhiteNits,
+                             _sdrDisplayPeakNits,
+                             _sourcePeakNits,
+                             _sourceReferenceWhiteNits,
+                             _sourceIsRelative,
                             _toneMappingMode,
                             _gamutMappingMode,
                             _viewInterpolationMode,
-                            _applyHlgOotf,
-                            _externalRequiresHlgOotf,
-                            _sdrBackgroundEncoded,
+                             _applyHlgOotf,
+                             _externalRequiresHlgOotf,
+                             _externalIsCanonicalScRgb,
+                             _presentationColorConversions,
+                             _sdrBackgroundEncoded,
                             _hdrBackgroundEncoded);
                     }
                     else
@@ -383,14 +395,19 @@ namespace BrightEyes.Renderer
                             _height,
                             ColorSourceMetadata.PqRec2020Opaque,
                             _displayColorMetadata,
-                            _sdrReferenceWhiteNits,
-                            _sdrDisplayPeakNits,
+                             _sdrReferenceWhiteNits,
+                             _sdrDisplayPeakNits,
+                             ColorSourceMetadata.PqRec2020Opaque.NominalPeakNits,
+                             ColorSourceMetadata.PqRec2020Opaque.ReferenceWhiteNits,
+                             false,
                             _toneMappingMode,
                             _gamutMappingMode,
                             _viewInterpolationMode,
-                            _applyHlgOotf,
-                            false,
-                            _sdrBackgroundEncoded,
+                             _applyHlgOotf,
+                             false,
+                             false,
+                             Array.Empty<ColorSpaceConversionOperation>(),
+                             _sdrBackgroundEncoded,
                             _hdrBackgroundEncoded);
                     }
 
@@ -486,7 +503,7 @@ namespace BrightEyes.Renderer
                     sampleRatePercent,
                     kind,
                     channel,
-                    source.ColorMetadata);
+                    ColorSourceMetadata.ScRgbLinear);
                 if (!dispatched) return false;
                 _submittedAnalysisRequests.Enqueue(new(Math.Clamp(sampleRatePercent, 1, 100), kind, channel, callback));
                 return true;
@@ -523,6 +540,8 @@ namespace BrightEyes.Renderer
                 _externalTexture = texture; // Borrowed: do not Dispose on Clear/Dispose
                 _externalColorMetadata = colorMetadata.Normalize();
                 _externalRequiresHlgOotf = colorMetadata.Transfer == ColorTransferFunction.Hlg;
+                _externalIsCanonicalScRgb = false;
+                _presentationColorConversions = Array.Empty<ColorSpaceConversionOperation>();
                 _externalTextureShaderResourceView = _device.CreateShaderResourceView(texture);
                 _externalTextureOwned = false;
 
@@ -563,6 +582,8 @@ namespace BrightEyes.Renderer
                 _externalTexture = openedTexture; // Owned by renderer
                 _externalColorMetadata = colorMetadata.Normalize();
                 _externalRequiresHlgOotf = colorMetadata.Transfer == ColorTransferFunction.Hlg;
+                _externalIsCanonicalScRgb = false;
+                _presentationColorConversions = Array.Empty<ColorSpaceConversionOperation>();
                 _externalTextureShaderResourceView = _device.CreateShaderResourceView(openedTexture);
                 _externalTextureOwned = true;
 
@@ -590,6 +611,8 @@ namespace BrightEyes.Renderer
                 _externalTextureOwned = false;
                 _externalColorMetadata = ColorSourceMetadata.Sdr;
                 _externalRequiresHlgOotf = false;
+                _externalIsCanonicalScRgb = false;
+                _presentationColorConversions = Array.Empty<ColorSpaceConversionOperation>();
 
                 // Reset to full-area viewport when no external content
                 _sourceWidth = 0;
@@ -740,6 +763,9 @@ namespace BrightEyes.Renderer
                 _externalTexture = newTexture;
                 _externalTextureOwned = true;
                 _externalColorMetadata = colorMetadata.Normalize();
+                _externalRequiresHlgOotf = colorMetadata.Transfer == ColorTransferFunction.Hlg;
+                _externalIsCanonicalScRgb = false;
+                _presentationColorConversions = Array.Empty<ColorSpaceConversionOperation>();
                 _externalTextureShaderResourceView = _device.CreateShaderResourceView(_externalTexture);
 
                 _sourceWidth = width;
@@ -825,14 +851,16 @@ namespace BrightEyes.Renderer
                 }
 
                 ID3D11ShaderResourceView view = _device.CreateShaderResourceView(texture);
-                return new GpuImageFrame(
-                    texture,
-                    view,
-                    frame.Width,
-                    frame.Height,
-                    frame.EncodedColorMetadata,
-                    false,
-                    frame.EncodedColorMetadata.Transfer == ColorTransferFunction.Hlg);
+                try
+                {
+                    return (_colorSpaceConversionEffect ?? throw new InvalidOperationException("Decoder normalization is unavailable."))
+                        .NormalizeDecoded(_deviceContext, view, frame.Width, frame.Height, frame.EncodedColorMetadata);
+                }
+                finally
+                {
+                    view.Dispose();
+                    texture.Dispose();
+                }
             }
         }
 
@@ -858,25 +886,39 @@ namespace BrightEyes.Renderer
             }
         }
 
-        public GpuImageFrame MaterializeIntermediate(GpuImageFrame source)
+        public GpuImageFrame ApplyColorSpaceConversions(
+            GpuImageFrame source,
+            IReadOnlyList<ColorSpaceConversionOperation> operations,
+            CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(operations);
+            cancellationToken.ThrowIfCancellationRequested();
             lock (_lockObject)
             {
-                GpuImageFrame output = (_gaussianBlurEffect ?? throw new InvalidOperationException("Intermediate materializer is unavailable."))
-                    .Materialize(_deviceContext ?? throw new InvalidOperationException("Device context not initialized."), source);
+                GpuImageFrame output = (_colorSpaceConversionEffect ?? throw new InvalidOperationException("Color conversion is unavailable."))
+                    .Apply(_deviceContext ?? throw new InvalidOperationException("Device context not initialized."), source, operations);
                 UpdateViewport();
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    output.Dispose();
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
                 return output;
             }
         }
 
-        public DisplayTargetFrame SetPresentationImage(GpuImageFrame image)
+        public DisplayTargetFrame SetPresentationImage(
+            GpuImageFrame image,
+            IReadOnlyList<ColorSpaceConversionOperation>? colorConversions = null)
         {
             ArgumentNullException.ThrowIfNull(image);
             lock (_lockObject)
             {
-                SetExternalTexture(image.Texture, image.ColorMetadata);
-                _externalRequiresHlgOotf = image.RequiresHlgOotf;
+                SetExternalTexture(image.Texture, ColorSourceMetadata.ScRgbLinear);
+                _externalRequiresHlgOotf = false;
+                _externalIsCanonicalScRgb = true;
+                _presentationColorConversions = colorConversions?.ToArray() ?? Array.Empty<ColorSpaceConversionOperation>();
                 return new DisplayTargetFrame(++_presentationId, image);
             }
         }
@@ -937,6 +979,8 @@ namespace BrightEyes.Renderer
             _externalTextureOwned = true;
             _externalColorMetadata = colorMetadata.Normalize();
             _externalRequiresHlgOotf = colorMetadata.Transfer == ColorTransferFunction.Hlg;
+            _externalIsCanonicalScRgb = false;
+            _presentationColorConversions = Array.Empty<ColorSpaceConversionOperation>();
             _externalTextureShaderResourceView = _device!.CreateShaderResourceView(texture);
         }
 
@@ -953,6 +997,7 @@ namespace BrightEyes.Renderer
            _vertexShader?.Dispose();
            _pixelShader?.Dispose();
             _colorManagementEffect?.Dispose();
+           _colorSpaceConversionEffect?.Dispose();
            _gaussianBlurEffect?.Dispose();
            _gpuOscilloscopeEffect?.Dispose();
            _externalTextureShaderResourceView?.Dispose();
@@ -1105,7 +1150,10 @@ namespace BrightEyes.Renderer
             ToneMappingMode toneMapping,
             GamutMappingMode gamutMapping,
             bool applyHlgOotf,
-            ViewInterpolationMode interpolationMode)
+            ViewInterpolationMode interpolationMode,
+            float sourcePeakNits,
+            float sourceReferenceWhiteNits,
+            bool sourceIsRelative)
         {
             lock (_lockObject)
             {
@@ -1113,6 +1161,9 @@ namespace BrightEyes.Renderer
                 _gamutMappingMode = gamutMapping;
                 _applyHlgOotf = applyHlgOotf;
                 _viewInterpolationMode = interpolationMode;
+                _sourcePeakNits = NormalizePositive(sourcePeakNits, 100.0f);
+                _sourceReferenceWhiteNits = NormalizePositive(sourceReferenceWhiteNits, 100.0f);
+                _sourceIsRelative = sourceIsRelative;
             }
         }
 

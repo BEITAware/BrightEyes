@@ -21,6 +21,8 @@ namespace BrightEyes.ViewModels;
 
 public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
 {
+    private static readonly TimeSpan PreviewFrameInterval = TimeSpan.FromMilliseconds(33);
+
     private readonly ProcessRegistry _registry;
     private readonly MetadataPreflightService _preflight = new();
     private readonly PipelineSerializer _serializer = new();
@@ -29,6 +31,10 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
     private ImageDocument? _activeDocument;
     private IImageProcess? _selectedProcess;
     private CancellationTokenSource? _previewCancellation;
+    private Task? _previewUpdateLoop;
+    private ImageDocument? _previewDocument;
+    private bool _previewUpdatePending;
+    private bool _previewRequiresDecode;
     private bool _disposed;
     private bool _isBusy;
     private string _statusText = "打开图像以生成过程。";
@@ -64,8 +70,6 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
         RestoreAutomaticCommand = new RelayCommand(parameter => { if (parameter is IImageProcess process) process.RestoreAutomaticParameters(); });
         CopyParametersCommand = new RelayCommand(CopyParameters, parameter => parameter is IImageProcess);
         PasteParametersCommand = new RelayCommand(PasteParameters, parameter => parameter is IImageProcess);
-        InspectInputCommand = new RelayCommand(parameter => InspectConnection(parameter as IImageProcess, true));
-        InspectOutputCommand = new RelayCommand(parameter => InspectConnection(parameter as IImageProcess, false));
         ZoomInCommand = new RelayCommand(_ => ChangeViewZoom(1.2f), _ => IsRendererReady);
         ZoomOutCommand = new RelayCommand(_ => ChangeViewZoom(1.0f / 1.2f), _ => IsRendererReady);
         ResetZoomCommand = new RelayCommand(_ => ResetView(), _ => IsRendererReady);
@@ -99,8 +103,6 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
     public ICommand RestoreAutomaticCommand { get; }
     public ICommand CopyParametersCommand { get; }
     public ICommand PasteParametersCommand { get; }
-    public ICommand InspectInputCommand { get; }
-    public ICommand InspectOutputCommand { get; }
     public ICommand ZoomInCommand { get; }
     public ICommand ZoomOutCommand { get; }
     public ICommand ResetZoomCommand { get; }
@@ -200,8 +202,7 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
             return false;
         }
         if (!ActiveDocument.CanInsertStructurally(descriptor, index, out reason)) return false;
-        bool compatible = ActiveDocument.CanInsert(descriptor, index, out reason);
-        if (!(compatible || ImageDocument.AllowIncompatiblePlacements)) return false;
+        if (!ActiveDocument.CanInsert(descriptor, index, out reason)) return false;
         SelectedProcess = ActiveDocument.Insert(descriptor, index);
         RefreshCommandState();
         return true;
@@ -217,8 +218,7 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
         int oldIndex = ActiveDocument.Processes.IndexOf(process);
         int adjustedIndex = index > oldIndex ? index - 1 : index;
         if (!ActiveDocument.CanMoveStructurally(process, adjustedIndex, out reason)) return false;
-        bool compatible = ActiveDocument.CanMove(process, index, out reason);
-        if (!(compatible || ImageDocument.AllowIncompatiblePlacements)) return false;
+        if (!ActiveDocument.CanMove(process, index, out reason)) return false;
         bool moved = ActiveDocument.Move(process, index);
         RefreshCommandState();
         return moved;
@@ -321,7 +321,7 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
         int selectedIndex = SelectedProcess is null
             ? Math.Max(terminalIndex, 0)
             : ActiveDocument.Processes.IndexOf(SelectedProcess) + 1;
-        if (terminalIndex >= 0 && !item.Descriptor.Definition.ImageReadOnly)
+        if (terminalIndex >= 0 && item.Descriptor.Definition.Role != ProcessRole.Observer)
             selectedIndex = Math.Min(selectedIndex, terminalIndex);
         if (!TryInsertProcess(item.Descriptor, selectedIndex, out string reason)) StatusText = reason;
     }
@@ -386,20 +386,9 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
         }
     }
 
-    private void InspectConnection(IImageProcess? process, bool input)
-    {
-        if (process is null) return;
-        InspectorText = input
-            ? $"输入硬类型：{process.Descriptor.Definition.InputType}\n{process.IncomingConnectionMessage}"
-            : $"输出硬类型：{process.Descriptor.Definition.OutputType}\n{FormatSemantics(process.OutputSemantics)}";
-    }
-
     private void OnPipelineChanged(object? sender, PipelineChangedEventArgs e)
     {
         if (sender is not ImageDocument document || !ReferenceEquals(document, ActiveDocument)) return;
-
-        if (document.HasExecuted)
-            CancelPreview(document);
 
         if (!ReferenceEquals(SelectedProcess, document.SelectedProcess))
             SelectedProcess = document.SelectedProcess;
@@ -407,19 +396,45 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
         RefreshCommandState();
         if (!document.HasExecuted) return;
 
-        _previewCancellation = new CancellationTokenSource();
-        SchedulePreview(document, e.RequiresDecode, _previewCancellation.Token);
+        QueuePreview(document, e.RequiresDecode);
     }
 
-    private async void SchedulePreview(ImageDocument document, bool forceDecode, CancellationToken token)
+    private void QueuePreview(ImageDocument document, bool forceDecode)
     {
+        _previewUpdatePending = true;
+        _previewRequiresDecode |= forceDecode;
+        if (_previewUpdateLoop is { IsCompleted: false } && ReferenceEquals(_previewDocument, document))
+            return;
+
+        _previewCancellation?.Cancel();
+        _previewCancellation?.Dispose();
+        var cancellation = new CancellationTokenSource();
+        _previewCancellation = cancellation;
+        _previewDocument = document;
+        _previewUpdateLoop = RunPreviewLoopAsync(document, cancellation);
+    }
+
+    private async Task RunPreviewLoopAsync(ImageDocument document, CancellationTokenSource cancellation)
+    {
+        CancellationToken token = cancellation.Token;
         try
         {
-            await Task.Delay(140, token);
-            if (token.IsCancellationRequested || !ReferenceEquals(document, ActiveDocument) || !IsRendererReady) return;
-            await _executor.ExecuteAsync(document, forceDecode);
-            if (!token.IsCancellationRequested && ReferenceEquals(document, ActiveDocument))
-                StatusText = "异步预览已更新。";
+            while (!token.IsCancellationRequested && ReferenceEquals(document, ActiveDocument))
+            {
+                await Task.Delay(PreviewFrameInterval, token);
+                if (token.IsCancellationRequested || !ReferenceEquals(document, ActiveDocument) || !IsRendererReady)
+                    return;
+
+                _previewUpdatePending = false;
+                bool forceDecode = _previewRequiresDecode;
+                _previewRequiresDecode = false;
+                await _executor.ExecuteAsync(document, forceDecode);
+                if (!token.IsCancellationRequested && ReferenceEquals(document, ActiveDocument))
+                    StatusText = "异步预览已更新。";
+
+                if (!_previewUpdatePending)
+                    return;
+            }
         }
         catch (OperationCanceledException)
         {
@@ -430,13 +445,30 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
                 StatusText = "异步预览失败，已保留最后有效画面：" + ex.GetBaseException().Message;
             Debug.WriteLine(ex);
         }
+        finally
+        {
+            if (ReferenceEquals(_previewCancellation, cancellation))
+            {
+                cancellation.Dispose();
+                _previewCancellation = null;
+                _previewUpdateLoop = null;
+                _previewDocument = null;
+                _previewUpdatePending = false;
+                _previewRequiresDecode = false;
+            }
+        }
     }
 
     private void CancelPreview(ImageDocument? document)
     {
-        _previewCancellation?.Cancel();
-        _previewCancellation?.Dispose();
+        CancellationTokenSource? cancellation = _previewCancellation;
         _previewCancellation = null;
+        _previewUpdateLoop = null;
+        _previewDocument = null;
+        _previewUpdatePending = false;
+        _previewRequiresDecode = false;
+        cancellation?.Cancel();
+        cancellation?.Dispose();
         document?.ExecutionCancellation?.Cancel();
     }
 
@@ -521,11 +553,6 @@ public sealed class MainViewModel : IDisposable, INotifyPropertyChanged
                $"Reference white {metadata.ReferenceWhiteNits:0.#} nit / peak {metadata.NominalPeakNits:0.#} nit\n" +
                $"{assumptions}；{conflicts}";
     }
-
-    private static string FormatSemantics(ImageSemantics? semantics) => semantics is null
-        ? "此硬类型没有图像语义。"
-        : $"{semantics.Primaries} / {semantics.Transfer} / {semantics.PhotometricModel}\n" +
-          $"reference white {semantics.ReferenceWhiteNits:0.##} nit / peak {semantics.NominalPeakNits:0.##} nit / {semantics.Range} / {semantics.Alpha}";
 
     private void HandlePreviewMouseWheel(int delta, int x, int y, bool control, bool shift)
     {

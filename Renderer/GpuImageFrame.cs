@@ -3,8 +3,9 @@ using Vortice.Direct3D11;
 namespace BrightEyes.Renderer;
 
 /// <summary>
-/// Owns one physical GPU image produced by the process graph. Logical decoder
-/// normalization may remain deferred until the first shader that consumes it.
+/// Owns one physical RGBA16F GPU image produced by the process graph. Decoder
+/// frames enter the graph in the fixed scRGB/linear contract; no per-node color
+/// metadata is carried by this object.
 /// </summary>
 public sealed class GpuImageFrame : IDisposable
 {
@@ -12,28 +13,19 @@ public sealed class GpuImageFrame : IDisposable
         ID3D11Texture2D texture,
         ID3D11ShaderResourceView shaderResourceView,
         int width,
-        int height,
-        ColorSourceMetadata colorMetadata,
-        bool isCanonicalIntermediate,
-        bool requiresHlgOotf)
+        int height)
     {
         Texture = texture;
         ShaderResourceView = shaderResourceView;
         Width = width;
         Height = height;
-        ColorMetadata = colorMetadata.Normalize();
-        IsCanonicalIntermediate = isCanonicalIntermediate;
-        RequiresHlgOotf = requiresHlgOotf;
     }
 
     internal ID3D11Texture2D Texture { get; }
     internal ID3D11ShaderResourceView ShaderResourceView { get; }
     public int Width { get; }
     public int Height { get; }
-    public ColorSourceMetadata ColorMetadata { get; }
-    public bool IsCanonicalIntermediate { get; }
-    public bool RequiresHlgOotf { get; }
-    public long ApproximateByteCount => (long)Width * Height * (IsCanonicalIntermediate ? 8 : 4);
+    public long ApproximateByteCount => (long)Width * Height * 8;
 
     public void Dispose()
     {

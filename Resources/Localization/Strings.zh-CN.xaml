@@ -21,6 +21,8 @@
     <system:String x:Key="Process_ViewRendering_Description">将扩展 sRGB 线性中间图像映射到视图空间，并执行终端编码与提交。</system:String>
     <system:String x:Key="Process_GaussianBlur_Name">高斯模糊</system:String>
     <system:String x:Key="Process_GaussianBlur_Description">在 GPU 上执行两向高斯卷积，并生成独立 RGBA16F 线性中间纹理。</system:String>
+    <system:String x:Key="Process_ColorSpaceConversion_Name">色彩空间转换</system:String>
+    <system:String x:Key="Process_ColorSpaceConversion_Description">显式指定输入/输出伽马和色域；相邻转换会融合执行，不交换过程元数据。</system:String>
     <system:String x:Key="Process_Waveform_Name">波形图</system:String>
     <system:String x:Key="Process_Waveform_Description">以亮度、RGB 分量分离或 RGB 分量叠合模式显示横向信号分布；振幅始终保持线性。</system:String>
     <system:String x:Key="Process_Histogram_Name">直方图</system:String>
@@ -40,6 +42,11 @@
     <system:String x:Key="Parameter_Interpolation">插值方法</system:String>
     <system:String x:Key="Parameter_BlurRadius">模糊半径</system:String>
     <system:String x:Key="Parameter_BlurSigma">标准差</system:String>
+    <system:String x:Key="Parameter_InputGamma">输入伽马</system:String>
+    <system:String x:Key="Parameter_InputGamut">输入色域</system:String>
+    <system:String x:Key="Parameter_OutputGamma">输出伽马</system:String>
+    <system:String x:Key="Parameter_OutputGamut">输出色域</system:String>
+    <system:String x:Key="Parameter_SourcePeak">来源标称峰值</system:String>
     <system:String x:Key="Parameter_SdrWhite">SDR 白</system:String>
     <system:String x:Key="Parameter_TargetPeak">目标峰值</system:String>
     <system:String x:Key="Parameter_HlgOotf">HLG OOTF</system:String>

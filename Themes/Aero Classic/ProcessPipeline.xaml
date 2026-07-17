@@ -237,9 +237,6 @@
                         <MenuItem Header="重置参数" Command="{Binding PlacementTarget.Tag.ResetProcessCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                         <MenuItem Header="恢复自动值" Command="{Binding PlacementTarget.Tag.RestoreAutomaticCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                         <Separator />
-                        <MenuItem Header="查看输入元数据" Command="{Binding PlacementTarget.Tag.InspectInputCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
-                        <MenuItem Header="查看输出元数据" Command="{Binding PlacementTarget.Tag.InspectOutputCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
-                        <Separator />
                         <MenuItem Header="复制参数" Command="{Binding PlacementTarget.Tag.CopyParametersCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                         <MenuItem Header="粘贴参数" Command="{Binding PlacementTarget.Tag.PasteParametersCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
                     </ContextMenu>
@@ -254,7 +251,7 @@
 
                 <Border x:Name="ConnectionLane" Background="{DynamicResource IntermediateConnectionBorderBrush}"
                         BorderBrush="{DynamicResource IntermediateConnectionBorderBrush}" BorderThickness="0,0,1,0"
-                        ToolTip="{Binding IncomingConnectionMessage}">
+                        ToolTip="{Binding Descriptor.Definition.RequiresIntermediateTexture, StringFormat=强制中间纹理：{0}}">
                     <Grid>
                         <Border x:Name="ConnectionLine" Margin="0,1,1,1"
                                 Background="{DynamicResource IntermediateConnectionBrush}" />
@@ -297,9 +294,9 @@
                         </Grid.ColumnDefinitions>
                         <TextBlock FontSize="9" Foreground="#405467" TextTrimming="CharacterEllipsis">
                             <TextBlock.Text>
-                                <MultiBinding StringFormat="{}{0}  &gt;  {1}">
-                                    <Binding Path="Descriptor.Definition.InputType" />
-                                    <Binding Path="Descriptor.Definition.OutputType" />
+                                <MultiBinding StringFormat="{}{0}  /  intermediate texture: {1}">
+                                    <Binding Path="Descriptor.Definition.Role" />
+                                    <Binding Path="Descriptor.Definition.RequiresIntermediateTexture" />
                                 </MultiBinding>
                             </TextBlock.Text>
                         </TextBlock>
@@ -310,7 +307,7 @@
                             <Grid>
                                 <Border BorderBrush="{DynamicResource ProcessBadgeHighlightBrush}"
                                         BorderThickness="1,1,1,0" CornerRadius="1" IsHitTestVisible="False" />
-                                <TextBlock x:Name="ConnectionLabelText" Text="{Binding IncomingConnectionLabel}"
+                                <TextBlock x:Name="ConnectionLabelText" Text="{Binding Descriptor.Definition.ExecutionDomain}"
                                            Margin="3,-1,3,0" FontSize="9"
                                            Foreground="{DynamicResource IntermediateConnectionTextBrush}" />
                             </Grid>
@@ -349,28 +346,9 @@
             </Grid>
         </Border>
         <DataTemplate.Triggers>
-            <DataTrigger Binding="{Binding Descriptor.Definition.InputType}" Value="RawImage">
-                <Setter TargetName="ConnectionLine" Property="Background" Value="{DynamicResource RawConnectionBrush}" />
-                <Setter TargetName="ConnectionLane" Property="Background" Value="{DynamicResource RawConnectionBorderBrush}" />
-                <Setter TargetName="ConnectionLane" Property="BorderBrush" Value="{DynamicResource RawConnectionBorderBrush}" />
-                <Setter TargetName="ConnectionLabel" Property="BorderBrush" Value="{DynamicResource RawConnectionBorderBrush}" />
-                <Setter TargetName="ConnectionLabel" Property="Background" Value="{DynamicResource RawConnectionLabelBrush}" />
-                <Setter TargetName="ConnectionLabelText" Property="Foreground" Value="{DynamicResource RawConnectionTextBrush}" />
-            </DataTrigger>
-            <DataTrigger Binding="{Binding IncomingConnectionSeverity}" Value="None">
+            <DataTrigger Binding="{Binding Descriptor.Definition.Role}" Value="Source">
                 <Setter TargetName="ConnectionLane" Property="Visibility" Value="Collapsed" />
                 <Setter TargetName="ConnectionLabel" Property="Visibility" Value="Collapsed" />
-            </DataTrigger>
-            <DataTrigger Binding="{Binding IncomingConnectionSeverity}" Value="SemanticWarning">
-                <Setter TargetName="WarningOverlay" Property="Visibility" Value="Visible" />
-            </DataTrigger>
-            <DataTrigger Binding="{Binding IncomingConnectionSeverity}" Value="HardError">
-                <Setter TargetName="ConnectionLine" Property="Background" Value="{DynamicResource ErrorConnectionLaneBrush}" />
-                <Setter TargetName="ConnectionLane" Property="Background" Value="{DynamicResource ErrorConnectionBrush}" />
-                <Setter TargetName="ConnectionLabel" Property="BorderBrush" Value="{DynamicResource ErrorConnectionBrush}" />
-                <Setter TargetName="ConnectionLabel" Property="Background" Value="{DynamicResource ErrorConnectionLabelBrush}" />
-                <Setter TargetName="ConnectionLabelText" Property="Foreground" Value="{DynamicResource ErrorConnectionBrush}" />
-                <Setter TargetName="ProcessBlock" Property="BorderBrush" Value="{DynamicResource ErrorConnectionBrush}" />
             </DataTrigger>
             <DataTrigger Binding="{Binding State}" Value="Pending">
                 <Setter TargetName="StateBadge" Property="Background" Value="{DynamicResource ProcessBadgeBlueBrush}" />

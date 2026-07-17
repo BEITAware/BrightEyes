@@ -115,7 +115,14 @@ public sealed class ImageDecodeService
             DecodedPixelStorage.Rgba8,
             rgba,
             null,
-            decoder.EffectiveInputColorMetadata,
+            preserveSourceEncoding
+                ? decoder.EffectiveSourceColorMetadata
+                : ColorSourceMetadata.Sdr with
+                {
+                    Alpha = decoder.AlphaMode.Value == DecoderAlphaMode.ForceOpaque
+                        ? AlphaRepresentation.Opaque
+                        : AlphaRepresentation.Straight
+                },
             DecoderBackend.PhotoSauce,
             preserveSourceEncoding
                 ? "PhotoSauce 原生 codec CPU 压缩解码并保留源编码；GPU 按有效输入解释执行 transfer、矩阵、缩放和映射。"
@@ -128,7 +135,7 @@ public sealed class ImageDecodeService
         DetectedImageMetadata detected = source.DetectedMetadata;
         if (detected.HasCicp) return true;
 
-        ColorSourceMetadata effective = decoder.EffectiveInputColorMetadata;
+        ColorSourceMetadata effective = decoder.EffectiveSourceColorMetadata;
         AlphaRepresentation detectedAlpha = detected.HasAlpha
             ? AlphaRepresentation.Straight
             : AlphaRepresentation.Opaque;

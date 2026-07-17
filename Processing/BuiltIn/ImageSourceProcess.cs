@@ -7,8 +7,6 @@ namespace BrightEyes.Processing.BuiltIn;
     "Process_ImageSource_Name",
     "Process_ImageSource_Description",
     "Input",
-    ProcessDataType.None,
-    ProcessDataType.RawImage,
     RibbonTab = "Process",
     RibbonGroup = "Input",
     RibbonOrder = 0,
@@ -18,6 +16,7 @@ namespace BrightEyes.Processing.BuiltIn;
     CanDelete = false,
     CanDisable = false,
     CanMove = false,
+    Role = ProcessRole.Source,
     ExecutionDomain = ProcessExecutionDomain.Cpu,
     Version = 1)]
 public sealed class ImageSourceProcess : ProcessBase
@@ -50,8 +49,9 @@ public sealed class ImageSourceProcess : ProcessBase
     public override ValueTask ExecuteAsync(ProcessExecutionContext context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        context.Value = Source ?? context.Source;
-        Diagnostic = "压缩文件及不可变来源元数据已送入过程图；尚未解释像素。";
+        if (Source is null)
+            throw new InvalidOperationException("没有可用的图像源。");
+        Diagnostic = "应用程序已读取压缩文件及不可变来源元数据；这些信息不会沿像素过程传递。";
         return ValueTask.CompletedTask;
     }
 }

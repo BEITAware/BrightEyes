@@ -480,8 +480,6 @@
                         <StackPanel Margin="5,2,5,6">
                             <TextBlock Text="{Binding SelectedProcessName}" FontWeight="SemiBold" Foreground="{DynamicResource ApplicationPrimaryTextBrush}" />
                             <TextBlock Text="{Binding SelectedProcessDescription}" FontSize="10" Foreground="{DynamicResource ApplicationMutedTextBrush}" TextWrapping="Wrap" />
-                            <TextBlock Text="{Binding SelectedProcess.Diagnostic}" Margin="0,3,0,0" FontSize="10"
-                                       Foreground="{DynamicResource ApplicationMutedTextBrush}" TextWrapping="Wrap" />
                         </StackPanel>
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                             <StackPanel>

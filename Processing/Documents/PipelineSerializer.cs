@@ -19,7 +19,7 @@ public sealed class PipelineSerializer
     public async Task SaveAsync(ImageDocument document, string filePath, CancellationToken cancellationToken = default)
     {
         var model = new PipelineFile(
-            3,
+            4,
             document.Source.ContentIdentity,
             document.Processes.Select(process => new ProcessFile(
                 process.Descriptor.Definition.StableId,
@@ -47,8 +47,8 @@ public sealed class PipelineSerializer
         await using FileStream stream = File.OpenRead(filePath);
         PipelineFile model = await JsonSerializer.DeserializeAsync<PipelineFile>(stream, Options, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidDataException("过程文件为空。");
-        if (model.SchemaVersion > 3)
-            throw new NotSupportedException($"过程文件 schema {model.SchemaVersion} 高于当前支持版本 3。");
+        if (model.SchemaVersion > 4)
+            throw new NotSupportedException($"过程文件 schema {model.SchemaVersion} 高于当前支持版本 4。");
 
         var restored = new List<IImageProcess>();
         ProcessFile? legacyMapper = model.Processes.LastOrDefault(process =>

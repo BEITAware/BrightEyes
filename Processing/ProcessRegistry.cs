@@ -109,15 +109,19 @@ public sealed class ProcessRegistry
             diagnostics.Add(new("Error", $"Process {type.FullName} requires a public parameterless constructor.", type.FullName));
         if (definition.Version < 1)
             diagnostics.Add(new("Error", $"Process {definition.StableId} has invalid version {definition.Version}.", type.FullName));
-        if (definition.ImageReadOnly &&
-            (!Contracts.ProcessConnectionPolicy.IsGpuImageType(definition.InputType) ||
-             definition.InputType != definition.OutputType))
+        if (definition.Role == ProcessRole.Observer &&
+            definition.ExecutionDomain != ProcessExecutionDomain.Observer)
         {
             diagnostics.Add(new(
                 "Error",
-                $"Image-read-only process {definition.StableId} must declare an identical GPU image input and output type.",
+                $"Observer process {definition.StableId} must use the Observer execution domain.",
                 type.FullName));
         }
+        if (definition.RequiresIntermediateTexture &&
+            definition.Role is ProcessRole.Source or ProcessRole.Decoder or ProcessRole.Observer or ProcessRole.Terminal)
+            diagnostics.Add(new("Error", $"Only image processes may require an intermediate texture: {definition.StableId}.", type.FullName));
+        if (definition.RequiresIntermediateTexture && definition.ExecutionDomain == ProcessExecutionDomain.Cpu)
+            diagnostics.Add(new("Error", $"CPU process {definition.StableId} cannot require a GPU intermediate texture.", type.FullName));
         if (!definition.AllowMultiple && definition.StableId.EndsWith("oscilloscope", StringComparison.OrdinalIgnoreCase))
             diagnostics.Add(new("Warning", $"Analysis process {definition.StableId} does not allow multiple instances.", type.FullName));
 

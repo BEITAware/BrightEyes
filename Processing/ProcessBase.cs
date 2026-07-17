@@ -12,9 +12,6 @@ public abstract class ProcessBase : IImageProcess
     private ProcessState _state = ProcessState.NotRun;
     private string _diagnostic = "尚未执行";
     private bool _isEnabled = true;
-    private ConnectionSeverity _incomingConnectionSeverity;
-    private string _incomingConnectionLabel = "";
-    private string _incomingConnectionMessage = "";
 
     protected ProcessBase()
     {
@@ -30,7 +27,6 @@ public abstract class ProcessBase : IImageProcess
     public ProcessDescriptor Descriptor { get; }
     public IReadOnlyList<IProcessParameter> Parameters => _parameters ??= DiscoverParameters();
     public abstract string Summary { get; }
-    public virtual ImageSemantics? OutputSemantics => null;
 
     public ProcessState State
     {
@@ -59,27 +55,7 @@ public abstract class ProcessBase : IImageProcess
 
     public bool HasUserOverrides => Parameters.Any(parameter => parameter.HasUserOverride);
 
-    public ConnectionSeverity IncomingConnectionSeverity
-    {
-        get => _incomingConnectionSeverity;
-        set => SetField(ref _incomingConnectionSeverity, value);
-    }
-
-    public string IncomingConnectionLabel
-    {
-        get => _incomingConnectionLabel;
-        set => SetField(ref _incomingConnectionLabel, value);
-    }
-
-    public string IncomingConnectionMessage
-    {
-        get => _incomingConnectionMessage;
-        set => SetField(ref _incomingConnectionMessage, value);
-    }
-
     public abstract void RecalculateAutomaticParameters(ProcessAutoContext context);
-
-    public virtual IReadOnlyList<string> ValidateSemanticInput(ImageSemantics input) => Array.Empty<string>();
 
     public abstract ValueTask ExecuteAsync(ProcessExecutionContext context, CancellationToken cancellationToken);
 
@@ -99,7 +75,6 @@ public abstract class ProcessBase : IImageProcess
     {
         OnPropertyChanged(nameof(Summary));
         OnPropertyChanged(nameof(HasUserOverrides));
-        OnPropertyChanged(nameof(OutputSemantics));
     }
 
     protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

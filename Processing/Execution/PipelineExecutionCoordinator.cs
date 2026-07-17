@@ -25,16 +25,8 @@ public sealed class PipelineExecutionCoordinator
         long generation = ++document.ExecutionGeneration;
         CancellationToken token = cancellation.Token;
 
-        IImageProcess? hardError = document.Processes.FirstOrDefault(
-            process => process.IsEnabled && process.IncomingConnectionSeverity == ConnectionSeverity.HardError);
-        if (hardError is not null)
-        {
-            MarkFailure(document, hardError, hardError.IncomingConnectionMessage);
-            return;
-        }
-
         var services = new PipelineExecutionServices(renderer, _decoder, document, forceDecode, generation);
-        var context = new ProcessExecutionContext(document.Source, document.DisplayMetadata, document.Source, services);
+        var context = new ProcessExecutionContext(document.Source, document.DisplayMetadata, services);
         var transientImages = new List<GpuImageFrame>();
         IImageProcess? runningProcess = null;
 
@@ -49,41 +41,55 @@ public sealed class PipelineExecutionCoordinator
                 if (generation != document.ExecutionGeneration) throw new OperationCanceledException(token);
                 runningProcess = process;
                 process.State = ProcessState.Running;
-                object? inputValue = context.Value;
-                await process.ExecuteAsync(context, token).ConfigureAwait(true);
-                if (process.Descriptor.Definition.ImageReadOnly && !ReferenceEquals(inputValue, context.Value))
+                ProcessDefinitionAttribute definition = process.Descriptor.Definition;
+                if (context.DisplayTarget is null &&
+                    context.PendingColorConversions.Count > 0 &&
+                    (definition.RequiresIntermediateTexture || definition.Role == ProcessRole.Observer))
                 {
-                    context.Value = inputValue;
-                    throw new InvalidOperationException(
-                        $"ImageReadOnly 过程 {process.Descriptor.Definition.StableId} 替换了管线图像值。只读过程必须保持输入引用不变。");
+                    GpuImageFrame input = context.Image ?? throw new InvalidOperationException("点运算队列没有可用的 GPU 图像。");
+                    GpuImageFrame materialized = renderer.ApplyColorSpaceConversions(
+                        input,
+                        context.TakeColorConversions(),
+                        token);
+                    context.SetImage(materialized);
+                    TrackTransient(materialized);
                 }
 
-                GpuImageFrame? produced = context.Value switch
+                GpuImageFrame? inputImage = context.Image;
+                DisplayTargetFrame? inputTarget = context.DisplayTarget;
+                int inputPointwiseCount = context.PendingColorConversions.Count;
+                await process.ExecuteAsync(context, token).ConfigureAwait(true);
+
+                if (definition.Role == ProcessRole.Observer &&
+                    (!ReferenceEquals(inputImage, context.Image) ||
+                     !ReferenceEquals(inputTarget, context.DisplayTarget) ||
+                     inputPointwiseCount != context.PendingColorConversions.Count))
                 {
-                    GpuImageFrame image => image,
-                    DisplayTargetFrame target => target.RetainedSource,
-                    _ => null
-                };
-                if (produced is not null &&
-                    !ReferenceEquals(produced, document.DecodedGpuFrame) &&
-                    !transientImages.Contains(produced))
-                    transientImages.Add(produced);
+                    throw new InvalidOperationException(
+                        $"观察过程 {definition.StableId} 修改了图像管线。观察过程必须保持图像和点运算队列不变。");
+                }
+                if (definition.Role == ProcessRole.Image &&
+                    definition.RequiresIntermediateTexture &&
+                    ReferenceEquals(inputImage, context.Image))
+                    throw new InvalidOperationException($"过程 {definition.StableId} 声明需要中间纹理，但没有生成新的 GPU 图像。");
+                if (definition.Role == ProcessRole.Image &&
+                    !definition.RequiresIntermediateTexture &&
+                    !ReferenceEquals(inputImage, context.Image))
+                    throw new InvalidOperationException($"过程 {definition.StableId} 生成了 GPU 图像，但 Attribute 未声明 RequiresIntermediateTexture。");
+
+                if (context.Image is GpuImageFrame produced) TrackTransient(produced);
 
                 if (process.State == ProcessState.Running)
-                    process.State = process.IncomingConnectionSeverity == ConnectionSeverity.SemanticWarning
-                        ? ProcessState.Warning
-                        : ProcessState.Valid;
+                    process.State = ProcessState.Valid;
             }
 
             if (generation != document.ExecutionGeneration || token.IsCancellationRequested)
                 throw new OperationCanceledException(token);
-            if (context.Value is not DisplayTargetFrame displayTarget)
+            if (context.DisplayTarget is not DisplayTargetFrame displayTarget)
                 throw new InvalidOperationException("过程没有到达固定的视图渲染终端；保留最后有效画面。");
 
             GpuImageFrame? oldFinal = document.FinalGpuFrame;
-            document.FinalGpuFrame = ReferenceEquals(displayTarget.RetainedSource, document.DecodedGpuFrame)
-                ? null
-                : displayTarget.RetainedSource;
+            document.FinalGpuFrame = displayTarget.RetainedSource;
             foreach (GpuImageFrame image in transientImages.Where(image => !ReferenceEquals(image, document.FinalGpuFrame)))
                 image.Dispose();
             transientImages.Clear();
@@ -92,6 +98,12 @@ public sealed class PipelineExecutionCoordinator
 
             document.HasExecuted = true;
             document.HasLastValidFrame = true;
+
+            void TrackTransient(GpuImageFrame image)
+            {
+                if (!ReferenceEquals(image, document.DecodedGpuFrame) && !transientImages.Contains(image))
+                    transientImages.Add(image);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -147,7 +159,7 @@ public sealed class PipelineExecutionCoordinator
             DecoderProcess decoder,
             CancellationToken cancellationToken)
         {
-            bool requiresDecode = _forceDecode || _document.DecodedFrame is null || _document.DecodedGpuFrame is null;
+            bool requiresDecode = _forceDecode || _document.DecodedGpuFrame is null;
             if (!requiresDecode)
             {
                 decoder.State = ProcessState.Cached;
@@ -162,15 +174,15 @@ public sealed class PipelineExecutionCoordinator
             cancellationToken.ThrowIfCancellationRequested();
 
             GpuImageFrame gpuImage = _renderer.CreateGpuImageFrame(decoded);
-            GpuImageFrame? oldGpuImage = _document.DecodedGpuFrame;
-            _document.DecodedFrame = decoded;
+            GpuImageFrame? previousDecoded = _document.DecodedGpuFrame;
             _document.DecodedGpuFrame = gpuImage;
-            oldGpuImage?.Dispose();
+            if (previousDecoded is not null && !ReferenceEquals(previousDecoded, _document.FinalGpuFrame))
+                previousDecoded.Dispose();
 
             decoder.ActualBackend = decoded.ActualBackend;
             decoder.BackendFallbackDetail = decoded.UsedFallback ? decoded.Diagnostic : "";
             decoder.Diagnostic = decoded.Diagnostic +
-                                 $" CPU 缓冲：{decoded.CpuByteCount / (1024.0 * 1024.0):0.##} MiB；已创建一次 GPU 源纹理。";
+                                 $" CPU 临时缓冲：{decoded.CpuByteCount / (1024.0 * 1024.0):0.##} MiB；已规范化为 RGBA16F scRGB/Linear，CPU 像素缓冲不驻留。";
             if (decoded.UsedFallback) decoder.State = ProcessState.Warning;
             return gpuImage;
         }

@@ -1,4 +1,5 @@
 Texture2D SourceTexture : register(t0);
+StructuredBuffer<float4> ColorConversions : register(t1);
 SamplerState PointSampler : register(s0);
 SamplerState LinearSampler : register(s1);
 
@@ -28,7 +29,7 @@ static const float PI = 3.14159265358979323846;
 
 float SrgbToLinear(float value)
 {
-    return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4);
+    return value <= 0.04045 ? value / 12.92 : pow(max((value + 0.055) / 1.055, 0.0), 2.4);
 }
 
 float LinearToSrgb(float value)
@@ -125,6 +126,95 @@ float3 ToLinearRec709(float3 linearColor)
     if (primaries < 1.5) return Rec2020ToRec709(DisplayP3ToRec2020(linearColor));
     if (primaries < 2.5) return Rec2020ToRec709(linearColor);
     return Rec2020ToRec709(ProPhotoToRec2020(linearColor));
+}
+
+float3 DecodeHlg(float3 e)
+{
+    e = max(e, 0.0);
+    return float3(
+        e.r <= 0.5 ? e.r * e.r / 3.0 : (exp((e.r - 0.5599107) / 0.1788328) + 0.2846689) / 12.0,
+        e.g <= 0.5 ? e.g * e.g / 3.0 : (exp((e.g - 0.5599107) / 0.1788328) + 0.2846689) / 12.0,
+        e.b <= 0.5 ? e.b * e.b / 3.0 : (exp((e.b - 0.5599107) / 0.1788328) + 0.2846689) / 12.0);
+}
+
+float3 EncodeHlg(float3 value)
+{
+    value = max(value, 0.0);
+    return float3(
+        value.r <= 1.0 / 12.0 ? sqrt(3.0 * value.r) : 0.1788328 * log(12.0 * value.r - 0.2846689) + 0.5599107,
+        value.g <= 1.0 / 12.0 ? sqrt(3.0 * value.g) : 0.1788328 * log(12.0 * value.g - 0.2846689) + 0.5599107,
+        value.b <= 1.0 / 12.0 ? sqrt(3.0 * value.b) : 0.1788328 * log(12.0 * value.b - 0.2846689) + 0.5599107);
+}
+
+float3 DecodeNodeTransfer(float3 value, float transfer)
+{
+    if (transfer < 0.5)
+        return float3(SrgbToLinear(value.r), SrgbToLinear(value.g), SrgbToLinear(value.b));
+    if (transfer < 1.5)
+        return float3(PqToNits(value.r), PqToNits(value.g), PqToNits(value.b)) / 80.0;
+    if (transfer < 2.5) return DecodeHlg(value);
+    if (transfer < 3.5) return value;
+    return pow(max(value, 0.0), 2.2);
+}
+
+float3 EncodeNodeTransfer(float3 value, float transfer)
+{
+    if (transfer < 0.5)
+        return float3(LinearToSrgb(value.r), LinearToSrgb(value.g), LinearToSrgb(value.b));
+    if (transfer < 1.5)
+        return float3(NitsToPq(value.r * 80.0), NitsToPq(value.g * 80.0), NitsToPq(value.b * 80.0));
+    if (transfer < 2.5) return EncodeHlg(value);
+    if (transfer < 3.5) return value;
+    return pow(max(value, 0.0), 1.0 / 2.2);
+}
+
+float3 ToRec2020(float3 c, float gamut)
+{
+    if (gamut < 0.5) return Rec709ToRec2020(c);
+    if (gamut < 1.5) return DisplayP3ToRec2020(c);
+    if (gamut < 2.5) return c;
+    return ProPhotoToRec2020(c);
+}
+
+float3 Rec2020ToDisplayP3(float3 c)
+{
+    return float3(
+        dot(c, float3(1.343578, -0.282180, -0.061398)),
+        dot(c, float3(-0.065298, 1.075788, -0.010490)),
+        dot(c, float3(0.002822, -0.019599, 1.016777)));
+}
+
+float3 Rec2020ToProPhoto(float3 c)
+{
+    return mul(c, float3x3(
+        1.325198, -0.217101, -0.108097,
+        -0.114976, 1.208218, -0.093242,
+        -0.031286, -0.048923, 1.080209));
+}
+
+float3 FromRec2020(float3 c, float gamut)
+{
+    if (gamut < 0.5) return Rec2020ToRec709(c);
+    if (gamut < 1.5) return Rec2020ToDisplayP3(c);
+    if (gamut < 2.5) return c;
+    return Rec2020ToProPhoto(c);
+}
+
+float3 ApplyQueuedColorConversions(float3 linear709Nits)
+{
+    int count = max((int)round(SamplingParameters.y), 0);
+    if (count == 0) return linear709Nits;
+    float3 value = linear709Nits / 80.0;
+    [loop]
+    for (int index = 0; index < count; index++)
+    {
+        float4 operation = ColorConversions[index];
+        float3 linearInput = DecodeNodeTransfer(value, operation.x);
+        float3 linearOutput = FromRec2020(ToRec2020(linearInput, operation.y), operation.w);
+        value = EncodeNodeTransfer(linearOutput, operation.z);
+    }
+    float4 last = ColorConversions[count - 1];
+    return FromRec2020(ToRec2020(DecodeNodeTransfer(value, last.z), last.w), 0.0) * 80.0;
 }
 
 float4 LoadEncoded(int2 coordinate)
@@ -293,11 +383,19 @@ float3 ApplyRenderMapper(float3 linear709)
     float targetPeak = max(OutputParameters.y, 1.0);
     if (MappingParameters.w > 0.5)
     {
-        float sceneLuminance = dot(max(linear709, 0.0), float3(0.2126, 0.7152, 0.0722));
+        float3 sceneLinear = SamplingParameters.z > 0.5 ? linear709 / 80.0 : linear709;
+        float sceneLuminance = dot(max(sceneLinear, 0.0), float3(0.2126, 0.7152, 0.0722));
         float gamma = 1.2 + 0.42 * log10(max(targetPeak, 1000.0) / 1000.0);
-        linear709 *= pow(max(sceneLuminance, 1e-6), gamma - 1.0) * targetPeak;
+        linear709 = sceneLinear * pow(max(sceneLuminance, 1e-6), gamma - 1.0) * targetPeak;
     }
-    else if (SourceParameters.x < 0.5 || SourceParameters.x > 2.5)
+    else if (SamplingParameters.z > 0.5 && SamplingParameters.w > 0.0)
+    {
+        // The application owns source interpretation. Relative-light sources
+        // are remapped from their detected reference white to the user-selected
+        // SDR white without consulting any neighboring process.
+        linear709 *= OutputParameters.z / max(SamplingParameters.w, 0.001);
+    }
+    else if (SamplingParameters.z < 0.5 && (SourceParameters.x < 0.5 || SourceParameters.x > 2.5))
     {
         linear709 *= OutputParameters.z / max(SourceParameters.w, 0.001);
     }
@@ -332,6 +430,7 @@ float4 main(PS_INPUT input) : SV_TARGET
     float4 sample = SampleImage(input.TexCoord);
     float alpha = saturate(sample.a);
     float3 straight = alpha > 1e-6 ? sample.rgb / alpha : 0.0;
+    straight = ApplyQueuedColorConversions(straight);
     float3 mapped = ApplyRenderMapper(straight);
     float3 composited = mapped * alpha + BackgroundLinear709() * (1.0 - alpha);
     return EncodeOutput(composited);

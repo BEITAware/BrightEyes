@@ -5,21 +5,27 @@ using System.Reflection;
 
 namespace BrightEyes.Processing.Contracts;
 
-public enum ProcessDataType
-{
-    None,
-    RawImage,
-    BrightEyesIntermediateImage,
-    AnalysisData,
-    DisplayTarget
-}
-
 public enum ProcessExecutionDomain
 {
     Cpu,
     Gpu,
     Hybrid,
     Observer
+}
+
+/// <summary>
+/// Describes where a process belongs in an image pipeline without declaring
+/// artificial input/output data types. Image processes all operate on the same
+/// opaque GPU image stream; only the source, decoder and terminal have fixed
+/// structural positions.
+/// </summary>
+public enum ProcessRole
+{
+    Source,
+    Decoder,
+    Image,
+    Observer,
+    Terminal
 }
 
 public enum ProcessState
@@ -96,14 +102,6 @@ public enum ColorRange
     Unspecified
 }
 
-public enum ConnectionSeverity
-{
-    None,
-    Compatible,
-    SemanticWarning,
-    HardError
-}
-
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
 public sealed class ProcessDefinitionAttribute : Attribute
 {
@@ -111,24 +109,18 @@ public sealed class ProcessDefinitionAttribute : Attribute
         string stableId,
         string nameResourceKey,
         string descriptionResourceKey,
-        string category,
-        ProcessDataType inputType,
-        ProcessDataType outputType)
+        string category)
     {
         StableId = stableId;
         NameResourceKey = nameResourceKey;
         DescriptionResourceKey = descriptionResourceKey;
         Category = category;
-        InputType = inputType;
-        OutputType = outputType;
     }
 
     public string StableId { get; }
     public string NameResourceKey { get; }
     public string DescriptionResourceKey { get; }
     public string Category { get; }
-    public ProcessDataType InputType { get; }
-    public ProcessDataType OutputType { get; }
     public string RibbonTab { get; set; } = "Process";
     public string RibbonGroup { get; set; } = "Utility";
     public int RibbonOrder { get; set; }
@@ -139,37 +131,16 @@ public sealed class ProcessDefinitionAttribute : Attribute
     public bool CanDisable { get; set; } = true;
     public bool CanMove { get; set; } = true;
 
+    public ProcessRole Role { get; set; } = ProcessRole.Image;
     /// <summary>
-    /// Declares a transparent observer of the current GPU image. The process
-    /// may inspect the image but must preserve the pipeline value by reference.
+    /// True when the process is a real sampling/materialization boundary. The
+    /// coordinator uses this declaration for texture lifetime and flushes any
+    /// queued pointwise operations before executing the process.
     /// </summary>
-    public bool ImageReadOnly { get; set; }
+    public bool RequiresIntermediateTexture { get; set; }
     public ProcessExecutionDomain ExecutionDomain { get; set; } = ProcessExecutionDomain.Gpu;
     public int Version { get; set; } = 1;
     public Type? ParameterPanelType { get; set; }
-}
-
-public static class ProcessConnectionPolicy
-{
-    public static bool CanAccept(ProcessDataType upstreamType, ProcessDefinitionAttribute downstream)
-    {
-        ArgumentNullException.ThrowIfNull(downstream);
-        return upstreamType == downstream.InputType ||
-               downstream.ImageReadOnly && IsGpuImageType(upstreamType) && IsGpuImageType(downstream.InputType);
-    }
-
-    public static ProcessDataType GetEffectiveOutputType(
-        ProcessDataType upstreamType,
-        ProcessDefinitionAttribute process)
-    {
-        ArgumentNullException.ThrowIfNull(process);
-        return process.ImageReadOnly && IsGpuImageType(upstreamType)
-            ? upstreamType
-            : process.OutputType;
-    }
-
-    public static bool IsGpuImageType(ProcessDataType type) =>
-        type is ProcessDataType.BrightEyesIntermediateImage or ProcessDataType.DisplayTarget;
 }
 
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = false, Inherited = true)]
@@ -208,48 +179,55 @@ public sealed record ProcessDescriptor(Type ProcessType, ProcessDefinitionAttrib
         throw new InvalidOperationException($"Could not create process type {ProcessType.FullName}."));
 }
 
-public sealed record ImageSemantics(
-    ColorPrimaries Primaries,
-    ColorTransferFunction Transfer,
-    PhotometricModel PhotometricModel,
-    float ReferenceWhiteNits,
-    float NominalPeakNits,
-    ColorRange Range,
-    AlphaRepresentation Alpha)
-{
-    public static ImageSemantics DefaultRelative => new(
-        ColorPrimaries.Rec709,
-        ColorTransferFunction.Linear,
-        PhotometricModel.DisplayLinearRelative,
-        100.0f,
-        100.0f,
-        ColorRange.Full,
-        AlphaRepresentation.Straight);
-}
-
 public sealed record ProcessAutoContext(
     RawImage? Source,
-    DisplayColorMetadata Display,
-    ImageSemantics? UpstreamSemantics);
+    DisplayColorMetadata Display);
 
 public sealed class ProcessExecutionContext
 {
     public ProcessExecutionContext(
         RawImage source,
         DisplayColorMetadata display,
-        object? value,
         IServiceProvider services)
     {
         Source = source;
         Display = display;
-        Value = value;
         Services = services;
     }
 
     public RawImage Source { get; }
     public DisplayColorMetadata Display { get; }
-    public object? Value { get; set; }
     public IServiceProvider Services { get; }
+    public GpuImageFrame? Image { get; private set; }
+    public DisplayTargetFrame? DisplayTarget { get; private set; }
+    public IReadOnlyList<ColorSpaceConversionOperation> PendingColorConversions => _pendingColorConversions;
+
+    private readonly List<ColorSpaceConversionOperation> _pendingColorConversions = new();
+
+    public void SetImage(GpuImageFrame image)
+    {
+        Image = image ?? throw new ArgumentNullException(nameof(image));
+        DisplayTarget = null;
+    }
+
+    public void SetDisplayTarget(DisplayTargetFrame target) =>
+        DisplayTarget = target ?? throw new ArgumentNullException(nameof(target));
+
+    public void QueueColorConversion(ColorSpaceConversionOperation operation)
+    {
+        if (Image is null)
+            throw new InvalidOperationException("色彩空间转换需要已解码的 GPU 图像。");
+        if (DisplayTarget is not null)
+            throw new InvalidOperationException("显示终端之后不能再变换图像。");
+        _pendingColorConversions.Add(operation);
+    }
+
+    internal ColorSpaceConversionOperation[] TakeColorConversions()
+    {
+        ColorSpaceConversionOperation[] result = _pendingColorConversions.ToArray();
+        _pendingColorConversions.Clear();
+        return result;
+    }
 }
 
 public sealed record ProcessDiagnostic(
@@ -267,12 +245,7 @@ public interface IImageProcess : INotifyPropertyChanged
     string Diagnostic { get; set; }
     bool IsEnabled { get; set; }
     bool HasUserOverrides { get; }
-    ConnectionSeverity IncomingConnectionSeverity { get; set; }
-    string IncomingConnectionLabel { get; set; }
-    string IncomingConnectionMessage { get; set; }
-    ImageSemantics? OutputSemantics { get; }
     void RecalculateAutomaticParameters(ProcessAutoContext context);
-    IReadOnlyList<string> ValidateSemanticInput(ImageSemantics input);
     ValueTask ExecuteAsync(ProcessExecutionContext context, CancellationToken cancellationToken);
     void ResetParameters();
     void RestoreAutomaticParameters();

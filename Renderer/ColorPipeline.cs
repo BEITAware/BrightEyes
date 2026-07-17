@@ -34,6 +34,17 @@ public enum AlphaRepresentation
 }
 
 /// <summary>
+/// One explicit, self-contained color-space conversion. It intentionally does
+/// not describe the image flowing between processes: every conversion carries
+/// both sides of its contract, so neighboring nodes never exchange metadata.
+/// </summary>
+public readonly record struct ColorSpaceConversionOperation(
+    ColorTransferFunction InputGamma,
+    ColorPrimaries InputGamut,
+    ColorTransferFunction OutputGamma,
+    ColorPrimaries OutputGamut);
+
+/// <summary>
 /// Describes the encoding of the pixels in an external texture. RGB values
 /// remain in their encoded form until the bridge shader converts them to the
 /// canonical linear Rec.2020/nits working space.
@@ -64,6 +75,17 @@ public readonly record struct ColorSourceMetadata(
         ColorPrimaries.ProPhoto,
         AlphaRepresentation.Straight,
         100.0f,
+        10000.0f);
+
+    /// <summary>
+    /// The fixed decoder/process texture contract. scRGB uses linear extended
+    /// Rec.709 primaries and 80 nit per unit; process textures are premultiplied.
+    /// </summary>
+    public static ColorSourceMetadata ScRgbLinear => new(
+        ColorTransferFunction.Linear,
+        ColorPrimaries.Rec709,
+        AlphaRepresentation.Premultiplied,
+        80.0f,
         10000.0f);
 
     public ColorSourceMetadata Normalize()

@@ -8,8 +8,6 @@ namespace BrightEyes.Processing.BuiltIn;
     "Process_ViewRendering_Name",
     "Process_ViewRendering_Description",
     "View",
-    ProcessDataType.BrightEyesIntermediateImage,
-    ProcessDataType.DisplayTarget,
     RibbonTab = "Process",
     RibbonGroup = "View",
     RibbonOrder = 1000,
@@ -19,10 +17,14 @@ namespace BrightEyes.Processing.BuiltIn;
     CanDelete = false,
     CanDisable = false,
     CanMove = false,
+    Role = ProcessRole.Terminal,
     ExecutionDomain = ProcessExecutionDomain.Gpu,
-    Version = 5)]
-public sealed class ViewRenderingProcess : IntermediateImageProcessBase
+    Version = 6)]
+public sealed class ViewRenderingProcess : ProcessBase
 {
+    private float _sourceReferenceWhiteNits = 100.0f;
+    private bool _sourceIsRelative = true;
+
     [ProcessParameter("preset", "Parameter_RenderPreset", ProcessParameterEditor.Enum, 0, AutoValueSource = "BrightEyes default")]
     public ProcessParameter<ToneMappingMode> Preset { get; } = new(ToneMappingMode.ColorCorrectV1);
 
@@ -38,18 +40,19 @@ public sealed class ViewRenderingProcess : IntermediateImageProcessBase
     [ProcessParameter("hlg-ootf", "Parameter_HlgOotf", ProcessParameterEditor.Boolean, 4, AutoValueSource = "Source photometric model")]
     public ProcessParameter<bool> ApplyHlgOotf { get; } = new(true);
 
-    [ProcessParameter("gamut-mapping", "Parameter_GamutMapping", ProcessParameterEditor.Enum, 5, AutoValueSource = "Color correct v1")]
+    [ProcessParameter("source-peak", "Parameter_SourcePeak", ProcessParameterEditor.Number, 5, Unit = "nit", Minimum = 1, Maximum = 10000, Step = 10, AutoValueSource = "Application source interpretation")]
+    public ProcessParameter<float> SourcePeakNits { get; } = new(100.0f);
+
+    [ProcessParameter("gamut-mapping", "Parameter_GamutMapping", ProcessParameterEditor.Enum, 6, AutoValueSource = "Color correct v1")]
     public ProcessParameter<GamutMappingMode> GamutMapping { get; } = new(GamutMappingMode.PerceptualCompress);
 
-    [ProcessParameter("background", "Parameter_Background", ProcessParameterEditor.Enum, 6, AutoValueSource = "Application theme")]
+    [ProcessParameter("background", "Parameter_Background", ProcessParameterEditor.Enum, 7, AutoValueSource = "Application theme")]
     public ProcessParameter<BackgroundMode> Background { get; } = new(BackgroundMode.ApplicationBackground);
 
     public override string Summary => $"{Preset.Value} / {InterpolationLabel(Interpolation.Value)} / {TargetPeakNits.Value:0.#} nit / {GamutMapping.Value}";
 
     public override void RecalculateAutomaticParameters(ProcessAutoContext context)
     {
-        ImageSemantics input = context.UpstreamSemantics ?? ImageSemantics.DefaultRelative;
-        SetInputAutomatic(input);
         float sdrWhite = context.Display.HasSystemSdrWhiteLevel
             ? context.Display.SdrWhiteLevelNits
             : (context.Display.IsHdr ? 203.0f : 100.0f);
@@ -60,27 +63,13 @@ public sealed class ViewRenderingProcess : IntermediateImageProcessBase
         SetAutomatic(Interpolation, ViewInterpolationMode.BrightEyesBilinear, "BrightEyes Bilinear");
         SetAutomatic(SdrWhiteNits, sdrWhite, context.Display.HasSystemSdrWhiteLevel ? "Windows SDR white" : "Display fallback");
         SetAutomatic(TargetPeakNits, targetPeak, context.Display.IsHdr ? "DXGI display metadata" : "SDR terminal");
-        SetAutomatic(ApplyHlgOotf, input.PhotometricModel == PhotometricModel.SceneLinearRelative, "Input photometric model");
+        bool sourceIsSceneLinear = context.Source?.DetectedMetadata.PhotometricModel == PhotometricModel.SceneLinearRelative;
+        _sourceIsRelative = context.Source?.DetectedMetadata.PhotometricModel == PhotometricModel.DisplayLinearRelative;
+        _sourceReferenceWhiteNits = context.Source?.DetectedMetadata.ReferenceWhiteNits ?? 100.0f;
+        SetAutomatic(ApplyHlgOotf, sourceIsSceneLinear, "Application source interpretation");
+        SetAutomatic(SourcePeakNits, context.Source?.DetectedMetadata.NominalPeakNits ?? 100.0f, "Application source interpretation");
         SetAutomatic(GamutMapping, GamutMappingMode.PerceptualCompress, "Color correct v1");
         SetAutomatic(Background, BackgroundMode.ApplicationBackground, "Application theme");
-        ImageSemantics output = context.Display.IsHdr
-            ? new(
-                Renderer.ColorPrimaries.Rec2020,
-                Renderer.ColorTransferFunction.Pq,
-                PhotometricModel.DisplayLinearAbsolute,
-                sdrWhite,
-                targetPeak,
-                ColorRange.Full,
-                Renderer.AlphaRepresentation.Opaque)
-            : new(
-                Renderer.ColorPrimaries.Rec709,
-                Renderer.ColorTransferFunction.Srgb,
-                PhotometricModel.DisplayLinearRelative,
-                100.0f,
-                100.0f,
-                ColorRange.Full,
-                Renderer.AlphaRepresentation.Opaque);
-        SetOutputAutomatic(output, "Active display target");
         Diagnostic = "固定终端过程；把上一张扩展 sRGB 线性图像映射到视图空间并提交显示。";
         NotifySummaryChanged();
     }
@@ -88,16 +77,24 @@ public sealed class ViewRenderingProcess : IntermediateImageProcessBase
     public override ValueTask ExecuteAsync(ProcessExecutionContext context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (context.Value is not Renderer.GpuImageFrame input)
+        if (context.Image is not Renderer.GpuImageFrame input)
             throw new InvalidOperationException("视图渲染需要一张可用的 GPU 中间图像。");
 
         var renderer = (Renderer.RendererD3D11?)context.Services.GetService(typeof(Renderer.RendererD3D11))
             ?? throw new InvalidOperationException("视图渲染服务不可用。");
         renderer.SetSdrCalibration(SdrWhiteNits.Value, Math.Min(TargetPeakNits.Value, 1000.0f));
         renderer.SetTargetPeak(TargetPeakNits.Value);
-        renderer.SetRenderMapping(Preset.Value, GamutMapping.Value, ApplyHlgOotf.Value, Interpolation.Value);
+        renderer.SetRenderMapping(
+            Preset.Value,
+            GamutMapping.Value,
+            ApplyHlgOotf.Value,
+            Interpolation.Value,
+            SourcePeakNits.Value,
+            _sourceReferenceWhiteNits,
+            _sourceIsRelative);
         renderer.SetPresentationBackground(Background.Value);
-        context.Value = renderer.SetPresentationImage(input);
+        Renderer.ColorSpaceConversionOperation[] conversions = context.TakeColorConversions();
+        context.SetDisplayTarget(renderer.SetPresentationImage(input, conversions));
         Diagnostic = $"视图映射参数已提交；使用 {InterpolationLabel(Interpolation.Value)} 插值，终端规范化、映射和编码在一个最终 GPU Pass 中执行。";
         return ValueTask.CompletedTask;
     }
@@ -107,4 +104,10 @@ public sealed class ViewRenderingProcess : IntermediateImageProcessBase
         ViewInterpolationMode.BrightEyesBilinear => "BrightEyes Bilinear",
         _ => mode.ToString()
     };
+
+    private static void SetAutomatic<T>(ProcessParameter<T> parameter, T value, string source)
+    {
+        parameter.SetDetectedValue(value, source, MetadataConfidence.High);
+        parameter.SetAutomaticValue(value, source);
+    }
 }

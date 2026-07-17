@@ -4,7 +4,7 @@ using BrightEyes.Renderer;
 
 namespace BrightEyes.Processing.BuiltIn;
 
-public abstract class AnalysisProcessBase : IntermediateImageProcessBase
+public abstract class AnalysisProcessBase : ProcessBase
 {
     private AnalysisData? _latestAnalysis;
 
@@ -55,10 +55,10 @@ public abstract class AnalysisProcessBase : IntermediateImageProcessBase
                 synchronizationContext.Post(_ => Accept(), null);
         };
 
-        bool displayTarget = context.Value is DisplayTargetFrame;
-        bool requested = context.Value switch
+        bool displayTarget = context.DisplayTarget is not null;
+        bool requested = context.DisplayTarget switch
         {
-            GpuImageFrame input => renderer.RequestAnalysis(
+            null when context.Image is GpuImageFrame input => renderer.RequestAnalysis(
                 input,
                 SampleRatePercent.Value,
                 kind,
@@ -91,12 +91,9 @@ public abstract class AnalysisProcessBase : IntermediateImageProcessBase
 
     public override void RecalculateAutomaticParameters(ProcessAutoContext context)
     {
-        ImageSemantics input = context.UpstreamSemantics ?? ImageSemantics.DefaultRelative;
-        SetInputAutomatic(input);
-        SetOutputAutomatic(input, "Observer pass-through identity");
         SetAutomatic(SampleRatePercent, 25, "Interactive analysis budget");
         RecalculateAnalysisParameters();
-        Diagnostic = "ImageReadOnly GPU 观察过程；按所在位置分析处理纹理或显示目标。";
+        Diagnostic = "GPU 观察过程；按所在位置分析处理纹理或显示目标，不修改图像。";
         NotifySummaryChanged();
     }
 
@@ -117,10 +114,15 @@ public abstract class AnalysisProcessBase : IntermediateImageProcessBase
             presentation,
             logarithmicScale,
             values,
-            OutputSemantics,
             DateTimeOffset.UtcNow);
         State = ProcessState.Cached;
         Diagnostic = $"GPU compute 完成；回读 {values.Length * sizeof(float)} bytes 紧凑分析数据。";
+    }
+
+    protected static void SetAutomatic<T>(ProcessParameter<T> parameter, T value, string source)
+    {
+        parameter.SetDetectedValue(value, source, MetadataConfidence.High);
+        parameter.SetAutomaticValue(value, source);
     }
 }
 
@@ -129,8 +131,6 @@ public abstract class AnalysisProcessBase : IntermediateImageProcessBase
     "Process_Waveform_Name",
     "Process_Waveform_Description",
     "Analysis",
-    ProcessDataType.BrightEyesIntermediateImage,
-    ProcessDataType.BrightEyesIntermediateImage,
     RibbonTab = "Process",
     RibbonGroup = "Analysis",
     RibbonOrder = 40,
@@ -138,7 +138,7 @@ public abstract class AnalysisProcessBase : IntermediateImageProcessBase
     AllowMultiple = true,
     CanDelete = true,
     CanDisable = true,
-    ImageReadOnly = true,
+    Role = ProcessRole.Observer,
     ExecutionDomain = ProcessExecutionDomain.Observer,
     Version = 1)]
 public sealed class WaveformProcess : AnalysisProcessBase
@@ -167,8 +167,6 @@ public sealed class WaveformProcess : AnalysisProcessBase
     "Process_Histogram_Name",
     "Process_Histogram_Description",
     "Analysis",
-    ProcessDataType.BrightEyesIntermediateImage,
-    ProcessDataType.BrightEyesIntermediateImage,
     RibbonTab = "Process",
     RibbonGroup = "Analysis",
     RibbonOrder = 41,
@@ -176,7 +174,7 @@ public sealed class WaveformProcess : AnalysisProcessBase
     AllowMultiple = true,
     CanDelete = true,
     CanDisable = true,
-    ImageReadOnly = true,
+    Role = ProcessRole.Observer,
     ExecutionDomain = ProcessExecutionDomain.Observer,
     Version = 1)]
 public sealed class HistogramProcess : AnalysisProcessBase
@@ -214,8 +212,6 @@ public sealed class HistogramProcess : AnalysisProcessBase
     "Process_Vectorscope_Name",
     "Process_Vectorscope_Description",
     "Analysis",
-    ProcessDataType.BrightEyesIntermediateImage,
-    ProcessDataType.BrightEyesIntermediateImage,
     RibbonTab = "Process",
     RibbonGroup = "Analysis",
     RibbonOrder = 42,
@@ -223,7 +219,7 @@ public sealed class HistogramProcess : AnalysisProcessBase
     AllowMultiple = true,
     CanDelete = true,
     CanDisable = true,
-    ImageReadOnly = true,
+    Role = ProcessRole.Observer,
     ExecutionDomain = ProcessExecutionDomain.Observer,
     Version = 1)]
 public sealed class VectorscopeProcess : AnalysisProcessBase
@@ -246,8 +242,6 @@ public sealed class VectorscopeProcess : AnalysisProcessBase
     "Process_StrictHistogram_Name",
     "Process_StrictHistogram_Description",
     "Analysis",
-    ProcessDataType.BrightEyesIntermediateImage,
-    ProcessDataType.BrightEyesIntermediateImage,
     RibbonTab = "Process",
     RibbonGroup = "Analysis",
     RibbonOrder = 43,
@@ -255,7 +249,7 @@ public sealed class VectorscopeProcess : AnalysisProcessBase
     AllowMultiple = true,
     CanDelete = true,
     CanDisable = true,
-    ImageReadOnly = true,
+    Role = ProcessRole.Observer,
     ExecutionDomain = ProcessExecutionDomain.Observer,
     Version = 1)]
 public sealed class StrictHistogramProcess : AnalysisProcessBase
