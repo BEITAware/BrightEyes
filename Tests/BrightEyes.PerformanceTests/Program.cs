@@ -1,6 +1,7 @@
 using BrightEyes.Processing;
 using BrightEyes.Processing.BuiltIn;
 using BrightEyes.Processing.Contracts;
+using BrightEyes.Processing.Documents;
 using BrightEyes.Processing.Execution;
 using BrightEyes.Renderer;
 using System.Diagnostics;
@@ -20,6 +21,7 @@ internal static class Program
         {
             string repositoryRoot = FindRepositoryRoot(args.FirstOrDefault());
             RunPassPolicyTests();
+            await VerifySidecarSavesAsync();
             DecodeMeasurement summary = await MeasureResourceDecodeAsync(repositoryRoot);
             GpuPipelineMeasurement gpuSummary = await MeasureDefaultGpuPipelineAsync(repositoryRoot);
 
@@ -38,6 +40,46 @@ internal static class Program
             Console.Error.WriteLine("FAIL: " + exception.Message);
             Console.Error.WriteLine(exception);
             return 1;
+        }
+    }
+
+    private static async Task VerifySidecarSavesAsync()
+    {
+        var directory = Directory.CreateTempSubdirectory("BrightEyes-save-");
+        try
+        {
+            var registry = ProcessRegistry.Discover();
+            var source = new RawImage("sample.png", Array.Empty<byte>(), DetectedImageMetadata.Unknown(".png"), "test");
+            using var document = new ImageDocument(source, registry, DisplayColorMetadata.SdrFallback);
+            var serializer = new PipelineSerializer();
+            string path = Path.Combine(directory.FullName, "sample.bepipeline.json");
+            await serializer.SaveAsync(document, path);
+            byte[] original = File.ReadAllBytes(path);
+            var blur = (GaussianBlurProcess)document.Insert(registry.GetRequired(BuiltInProcessIds.GaussianBlur), 2);
+            try
+            {
+                await serializer.SaveAsync(document, path, new CancellationToken(canceled: true));
+                throw new InvalidOperationException("Expected a cancelled save.");
+            }
+            catch (OperationCanceledException) { }
+            Assert(document.IsDirty && original.SequenceEqual(File.ReadAllBytes(path)),
+                "A cancelled save must preserve the last sidecar and leave edits dirty.");
+            Task save = serializer.SaveAsync(document, path);
+            blur.Radius.SetUserValue(12);
+            await save;
+            Assert(document.IsDirty, "A save must not mark a newer edit as saved.");
+            Task earlier = serializer.SaveAsync(document, path);
+            blur.Radius.SetUserValue(24);
+            await Task.WhenAll(earlier, serializer.SaveAsync(document, path));
+            using var reopened = new ImageDocument(source, registry, DisplayColorMetadata.SdrFallback);
+            Assert(await serializer.TryLoadAsync(reopened, registry, path) &&
+                reopened.Processes.OfType<GaussianBlurProcess>().Single().Radius.Value == 24 && !document.IsDirty,
+                "Saving again must persist the pending edit in a readable sidecar.");
+            Assert(directory.GetFiles().Length == 1, "Saving left a temporary file behind.");
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
         }
     }
 

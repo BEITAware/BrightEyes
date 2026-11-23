@@ -9,6 +9,7 @@ namespace BrightEyes.Processing.Documents;
 
 public sealed class PipelineSerializer
 {
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
     private static readonly JsonSerializerOptions Options = new()
     {
         WriteIndented = true,
@@ -18,6 +19,8 @@ public sealed class PipelineSerializer
 
     public async Task SaveAsync(ImageDocument document, string filePath, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        long revision = document.PipelineRevision;
         var model = new PipelineFile(
             4,
             document.Source.ContentIdentity,
@@ -32,9 +35,31 @@ public sealed class PipelineSerializer
                         ? null
                         : JsonSerializer.Serialize(parameter.UserOverrideValue, parameter.ValueType, Options))).ToArray())).ToArray());
 
-        await using FileStream stream = File.Create(filePath);
-        await JsonSerializer.SerializeAsync(stream, model, Options, cancellationToken).ConfigureAwait(false);
-        document.MarkSaved();
+        await _saveGate.WaitAsync(cancellationToken);
+        try
+        {
+            string destination = Path.GetFullPath(filePath);
+            string temporary = Path.Combine(Path.GetDirectoryName(destination)!, Path.GetRandomFileName());
+            var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                bufferSize: 4096, useAsync: true);
+            try
+            {
+                await using (stream)
+                    await JsonSerializer.SerializeAsync(stream, model, Options, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                File.Move(temporary, destination, overwrite: true);
+            }
+            finally
+            {
+                File.Delete(temporary);
+            }
+            if (document.PipelineRevision == revision)
+                document.MarkSaved();
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
     }
 
     public async Task<bool> TryLoadAsync(

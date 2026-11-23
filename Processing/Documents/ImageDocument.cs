@@ -54,6 +54,7 @@ public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
     public UndoManager Undo { get; }
     public CancellationTokenSource? ExecutionCancellation { get; set; }
     public long ExecutionGeneration { get; set; }
+    internal long PipelineRevision { get; private set; }
     public bool HasLastValidFrame { get; set; }
     public GpuImageFrame? DecodedGpuFrame { get; set; }
     public GpuImageFrame? FinalGpuFrame { get; set; }
@@ -291,6 +292,7 @@ public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
             .All(process => process.Descriptor.Definition.Role == ProcessRole.Observer);
         if (!valid)
             throw new InvalidDataException("保存的流程必须以唯一图像源和解码器开始，并包含唯一显示终端；终端之后只能放置观察过程。");
+        PipelineRevision++;
         foreach (IImageProcess process in Processes) Unsubscribe(process);
         Processes.Clear();
         foreach (IImageProcess process in restoredProcesses)
@@ -374,6 +376,7 @@ public sealed class ImageDocument : INotifyPropertyChanged, IDisposable
 
     private void Changed(bool requiresDecode, string reason)
     {
+        PipelineRevision++;
         IsDirty = true;
         RecalculateAndValidate();
         RaisePipelineChanged(requiresDecode, reason);
